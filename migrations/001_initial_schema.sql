@@ -1,0 +1,27 @@
+-- schema.sql
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS handles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(64) UNIQUE NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'active',
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS wallets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    chain VARCHAR(32) NOT NULL,
+    network VARCHAR(32) NOT NULL,
+    address VARCHAR(255) UNIQUE NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'verified',
+    linked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_handles_name ON handles(name);
+CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address);
