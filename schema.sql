@@ -15,19 +15,14 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- 2. Handles Table
 -- Manages .nid identity handles mapped to user accounts
-CREATE TABLE "handles" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	"user_id" uuid NOT NULL,
-	"handle" varchar(64) NOT NULL CONSTRAINT "handles_handle_key" UNIQUE,
-	"status" varchar(32) DEFAULT 'active' NOT NULL,
-	"is_primary" boolean DEFAULT false,
-	"created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS handles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    handle VARCHAR(64) NOT NULL CONSTRAINT handles_handle_key UNIQUE,
+    status VARCHAR(32) DEFAULT 'active' NOT NULL,
+    is_primary BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX "handles_handle_key" ON "handles" ("handle");
-CREATE UNIQUE INDEX "handles_pkey" ON "handles" ("id");
-CREATE INDEX "idx_handles_handle" ON "handles" ("handle");
-CREATE INDEX "idx_handles_user_id" ON "handles" ("user_id");
-
 
 -- 3. Wallets Table
 -- Stores multi-chain cryptographic wallet addresses (EVM, Solana, etc.) linked to users
@@ -50,30 +45,33 @@ CREATE TABLE IF NOT EXISTS oauth_sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 5. OAuth Clients Table (OIDC Third-Party Apps)
+CREATE TABLE IF NOT EXISTS oauth_clients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id VARCHAR(128) UNIQUE NOT NULL,
+    client_secret VARCHAR(256) NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    name VARCHAR(128) NOT NULL
+);
+
+-- 6. OAuth Codes Table (Temporary Authorization Codes)
+CREATE TABLE IF NOT EXISTS oauth_codes (
+    code VARCHAR(128) PRIMARY KEY,
+    client_id VARCHAR(128) NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
 -- ============================================================================
 -- Indexes for Performance Optimization & Lookups
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_handles_name ON handles(name);
+CREATE UNIQUE INDEX IF NOT EXISTS handles_handle_key ON handles(handle);
+CREATE INDEX IF NOT EXISTS idx_handles_handle ON handles(handle);
 CREATE INDEX IF NOT EXISTS idx_handles_user_id ON handles(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address);
 CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_oauth_sessions_user_id ON oauth_sessions(user_id);
-
-
-CREATE TABLE "oauth_clients" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	"client_id" varchar(128) UNIQUE NOT NULL,
-	"client_secret" varchar(256) NOT NULL,
-	"redirect_uri" text NOT NULL,
-	"name" varchar(128) NOT NULL
-);
-
-CREATE TABLE "oauth_codes" (
-	"code" varchar(128) PRIMARY KEY,
-	"client_id" varchar(128) NOT NULL,
-	"user_id" uuid NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
+CREATE INDEX IF NOT EXISTS idx_oauth_codes_client_id ON oauth_codes(client_id);

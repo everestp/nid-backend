@@ -1,7 +1,7 @@
 package dto
 
 type ClaimHandleRequest struct {
-	Name      string `json:"name"`
+	Name      string `json:"handle"`
 	Address   string `json:"address"`
 	Chain     string `json:"chain"`
 	Signature string `json:"signature"`
