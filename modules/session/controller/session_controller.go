@@ -4,7 +4,9 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"nid-backend/modules/session/dto"
 	"nid-backend/modules/session/service"
+	"nid-backend/pkg/middleware"
 )
 
 type SessionController struct {
@@ -21,20 +23,26 @@ func (c *SessionController) RevokeHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	sessionID := r.URL.Query().Get("id")
 	if sessionID == "" {
 		http.Error(w, "Missing session ID", http.StatusBadRequest)
 		return
 	}
 
-	if err := c.service.Revoke(sessionID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := c.service.Revoke(sessionID, userID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "success",
-		"message": "session revoked",
+	json.NewEncoder(w).Encode(dto.SessionResponse{
+		Status:  "success",
+		Message: "session revoked successfully",
 	})
 }

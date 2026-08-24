@@ -16,12 +16,14 @@ func NewWalletService(repo *repository.WalletRepository) *WalletService {
 }
 
 func (s *WalletService) LinkWallet(userID, chain, network, address string) (*models.Wallet, error) {
-	if address == "" || chain == "" {
-		return nil, errors.New("invalid chain or address")
+	if address == "" || chain == "" || network == "" {
+		return nil, errors.New("chain, network, and address are required")
 	}
+
 	existing, _ := s.repo.FindByAddress(address)
 	if existing != nil {
-		return nil, errors.New("wallet already linked")
+		return nil, errors.New("wallet already linked to an account")
 	}
+
 	return s.repo.Create(userID, chain, network, address)
 }

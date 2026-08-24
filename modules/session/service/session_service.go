@@ -2,6 +2,7 @@
 package service
 
 import (
+	"errors"
 	"nid-backend/modules/session/repository"
 )
 
@@ -13,6 +14,9 @@ func NewSessionService(repo *repository.SessionRepository) *SessionService {
 	return &SessionService{repo: repo}
 }
 
-func (s *SessionService) Revoke(sessionID string) error {
-	return s.repo.RevokeSession(sessionID)
+func (s *SessionService) Revoke(sessionID, userID string) error {
+	if sessionID == "" {
+		return errors.New("session ID is required")
+	}
+	return s.repo.RevokeSession(sessionID, userID)
 }
