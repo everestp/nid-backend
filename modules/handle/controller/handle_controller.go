@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"nid-backend/modules/handle/dto"
 	"nid-backend/modules/handle/service"
-	"nid-backend/pkg/middleware"
 )
 
 type HandleController struct {
@@ -23,19 +22,14 @@ func (c *HandleController) ClaimHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
-	if !ok || userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	var req dto.ClaimHandleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	handle, err := c.service.ClaimHandle(userID, req.Name)
+	// Updated to match the service signature: passing name, address, chain, and signature
+	handle, err := c.service.ClaimHandle(req.Name, req.Address, req.Chain, req.Signature)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -1,9 +1,8 @@
-// modules/handle/service/handle_service.go
 package service
 
 import (
 	"errors"
-	"nid-backend/models"
+	"strings"
 	"nid-backend/modules/handle/repository"
 )
 
@@ -15,17 +14,13 @@ func NewHandleService(repo *repository.HandleRepository) *HandleService {
 	return &HandleService{repo: repo}
 }
 
-func (s *HandleService) ClaimHandle(userID, name string) (*models.Handle, error) {
-	if len(name) < 3 {
-		return nil, errors.New("handle name too short")
+func (s *HandleService) ClaimHandle(name, address, chain, signature string) (*repository.HandleModel, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" || address == "" || chain == "" {
+		return nil, errors.New("name, address, and chain are required")
 	}
-	existing, _ := s.repo.FindByName(name)
-	if existing != nil {
-		return nil, errors.New("handle already taken")
-	}
-	return s.repo.Create(userID, name)
-}
 
-func (s *HandleService) ResolveHandle(name string) (*models.Handle, error) {
-	return s.repo.FindByName(name)
+	// TODO: Verify cryptographic signature here if needed
+
+	return s.repo.ClaimHandleForWallet(name, address, chain)
 }

@@ -19,7 +19,7 @@ func (r *ResolutionRepository) ResolveAddress(handleName, chain string) (string,
 		SELECT w.address
 		FROM handles h
 		JOIN wallets w ON h.user_id = w.user_id
-		WHERE h.name = $1 AND w.chain = $2 AND h.status = 'active'
+		WHERE h.handle = $1 AND w.chain = $2 AND h.status = 'active'
 	`
 	var address string
 	err := r.db.QueryRow(query, handleName, chain).Scan(&address)

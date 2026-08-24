@@ -1,8 +1,11 @@
-// modules/handle/dto/handle_dto.go
 package dto
 
 type ClaimHandleRequest struct {
-	Name string `json:"name"`
+	Name      string `json:"name"`
+	Address   string `json:"address"`
+	Chain     string `json:"chain"`
+	Signature string `json:"signature"`
+	Message   string `json:"message"`
 }
 
 type HandleResponse struct {
@@ -10,6 +13,6 @@ type HandleResponse struct {
 	UserID    string `json:"user_id"`
 	Name      string `json:"name"`
 	Status    string `json:"status"`
-	Primary   bool   `json:"primary"`
+	Primary   bool   `json:"is_primary"`
 	CreatedAt string `json:"created_at"`
 }

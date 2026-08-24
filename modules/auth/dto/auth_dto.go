@@ -1,7 +1,7 @@
-// modules/auth/dto/auth_dto.go
 package dto
 
 type LoginRequest struct {
+	Handle    string `json:"handle"`
 	Address   string `json:"address"`
 	Signature string `json:"signature"`
 	Message   string `json:"message"`
@@ -11,4 +11,5 @@ type LoginRequest struct {
 type LoginResponse struct {
 	Token  string `json:"token"`
 	UserID string `json:"user_id"`
+	Handle string `json:"handle"`
 }

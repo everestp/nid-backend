@@ -1,4 +1,3 @@
-// modules/auth/controller/auth_controller.go
 package controller
 
 import (
@@ -28,9 +27,9 @@ func (c *AuthController) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, token, err := c.service.AuthenticateWallet(req.Address, req.Signature, req.Message, req.Chain)
+	userID, token, err := c.service.AuthenticateWithHandle(req.Handle, req.Address, req.Signature, req.Message, req.Chain)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -38,5 +37,6 @@ func (c *AuthController) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(dto.LoginResponse{
 		Token:  token,
 		UserID: userID,
+		Handle: req.Handle,
 	})
 }

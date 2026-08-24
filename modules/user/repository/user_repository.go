@@ -25,7 +25,7 @@ func (r *UserRepository) FindUserByID(userID string) (*models.User, error) {
 }
 
 func (r *UserRepository) FindHandlesByUserID(userID string) ([]string, error) {
-	query := `SELECT name FROM handles WHERE user_id = $1 AND status = 'active'`
+	query := `SELECT handle FROM handles WHERE user_id = $1 AND status = 'active'`
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
 		return nil, err
