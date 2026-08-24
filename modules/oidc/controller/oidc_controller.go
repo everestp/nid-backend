@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -92,40 +93,45 @@ func (c *OIDCController) AuthorizeHandler(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-
 	q := r.URL.Query()
 
 	clientID := q.Get("client_id")
-
 	redirectURI := q.Get("redirect_uri")
-
 	responseType := q.Get("response_type")
-
 	scope := q.Get("scope")
-
 	state := q.Get("state")
-
 	nonce := q.Get("nonce")
-
 	codeChallenge := q.Get("code_challenge")
+	codeChallengeMethod := q.Get("code_challenge_method")
 
-	codeChallengeMethod :=
-		q.Get("code_challenge_method")
+	log.Printf(
+		"OAuth authorize: client_id=%q redirect_uri=%q response_type=%q scope=%q",
+		clientID,
+		redirectURI,
+		responseType,
+		scope,
+	)
 
-	// --------------------------------------------------------
-	// Validate required parameters
-	// --------------------------------------------------------
+	// ------------------------------------------------------------
+	// Validate required OAuth parameters
+	// ------------------------------------------------------------
 
-	if clientID == "" ||
-		redirectURI == "" ||
-		responseType != "code" {
+	if clientID == "" {
+		http.Error(w, "missing client_id", http.StatusBadRequest)
+		return
+	}
 
+	if redirectURI == "" {
+		http.Error(w, "missing redirect_uri", http.StatusBadRequest)
+		return
+	}
+
+	if responseType != "code" {
 		http.Error(
 			w,
-			"invalid OAuth authorization request",
+			"response_type must be code",
 			http.StatusBadRequest,
 		)
-
 		return
 	}
 
@@ -133,89 +139,130 @@ func (c *OIDCController) AuthorizeHandler(
 		scope = "openid"
 	}
 
-	// OIDC requires openid scope.
-	if !strings.Contains(scope, "openid") {
+	// ------------------------------------------------------------
+	// Validate scope
+	// ------------------------------------------------------------
+
+	hasOpenID := false
+
+	for _, s := range strings.Fields(scope) {
+		if s == "openid" {
+			hasOpenID = true
+			break
+		}
+	}
+
+	if !hasOpenID {
 		http.Error(
 			w,
 			"openid scope required",
 			http.StatusBadRequest,
 		)
-
 		return
 	}
 
-	// --------------------------------------------------------
-	// PKCE required
-	// --------------------------------------------------------
+	// ------------------------------------------------------------
+	// Validate PKCE
+	// ------------------------------------------------------------
 
-	if codeChallenge == "" ||
-		codeChallengeMethod != "S256" {
-
+	if codeChallenge == "" {
 		http.Error(
 			w,
-			"PKCE with S256 is required",
+			"code_challenge is required",
 			http.StatusBadRequest,
 		)
-
 		return
 	}
 
-	// --------------------------------------------------------
-	// Validate client + redirect URI
-	// --------------------------------------------------------
+	if codeChallengeMethod != "S256" {
+		http.Error(
+			w,
+			"code_challenge_method must be S256",
+			http.StatusBadRequest,
+		)
+		return
+	}
 
-	if err := c.service.ValidateAuthorizationRequest(
+	// ------------------------------------------------------------
+	// Validate OAuth client + redirect URI
+	// ------------------------------------------------------------
+
+	err := c.service.ValidateAuthorizationRequest(
 		clientID,
 		redirectURI,
-	); err != nil {
+	)
+
+	if err != nil {
+		log.Printf(
+			"OAuth client validation failed: %v",
+			err,
+		)
 
 		http.Error(
 			w,
 			"invalid client or redirect URI",
 			http.StatusBadRequest,
 		)
-
 		return
 	}
 
-	// --------------------------------------------------------
-	// Check NID login session
-	// --------------------------------------------------------
+	// ------------------------------------------------------------
+	// Check NID authentication
+	// ------------------------------------------------------------
 
-	userID, err :=
-		helpers.GetUserIDFromRequest(r)
+	userID, err := helpers.GetUserIDFromRequest(r)
 
 	if err != nil {
+		/*
+			User is NOT authenticated.
 
-		// Preserve complete OAuth request.
-		loginURL := "/login?" +
+			Send them to the React OAuth authorization page.
+
+			IMPORTANT:
+			We preserve the complete OAuth request.
+		*/
+
+		oauthURL := "http://localhost:5173/oauth/authorize?" +
 			r.URL.RawQuery
 
 		http.Redirect(
 			w,
 			r,
-			loginURL,
+			oauthURL,
 			http.StatusFound,
 		)
 
 		return
 	}
 
-	// --------------------------------------------------------
-	// Generate authorization code
-	// --------------------------------------------------------
+	// ------------------------------------------------------------
+	// User is authenticated
+	// ------------------------------------------------------------
 
-	code, err :=
-		c.service.GenerateAuthCode(
-			clientID,
-			userID,
-			redirectURI,
-			scope,
-			nonce,
-			codeChallenge,
-		)
+	log.Printf(
+		"OAuth authenticated user: user_id=%s client_id=%s",
+		userID,
+		clientID,
+	)
+
+	// ------------------------------------------------------------
+	// Generate authorization code
+	// ------------------------------------------------------------
+
+	code, err := c.service.GenerateAuthCode(
+		clientID,
+		userID,
+		redirectURI,
+		scope,
+		nonce,
+		codeChallenge,
+	)
 
 	if err != nil {
+		log.Printf(
+			"failed generating authorization code: %v",
+			err,
+		)
 
 		http.Error(
 			w,
@@ -226,15 +273,13 @@ func (c *OIDCController) AuthorizeHandler(
 		return
 	}
 
-	// --------------------------------------------------------
-	// Redirect to application
-	// --------------------------------------------------------
+	// ------------------------------------------------------------
+	// Redirect to client callback
+	// ------------------------------------------------------------
 
-	callback, err :=
-		url.Parse(redirectURI)
+	callback, err := url.Parse(redirectURI)
 
 	if err != nil {
-
 		http.Error(
 			w,
 			"invalid redirect URI",
@@ -252,8 +297,7 @@ func (c *OIDCController) AuthorizeHandler(
 		params.Set("state", state)
 	}
 
-	callback.RawQuery =
-		params.Encode()
+	callback.RawQuery = params.Encode()
 
 	http.Redirect(
 		w,

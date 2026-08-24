@@ -15,3 +15,10 @@ When you create your account on NID.xyz for the very first time, the entire proc
 Because you didn't create a password the first time, you won't type one later either. Whenever a site asks you to "Sign in with NID," your wallet just pops up, you click sign, and you're in instantly.
 
 **Zero passwords to remember, zero email verification links to click—just your wallet and your signature!**
+
+
+NID Frontend   :5173
+NID Backend    :8081
+
+Demo Frontend  :5174
+Demo Backend   :8082
