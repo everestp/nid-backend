@@ -34,3 +34,16 @@ func (s *HandleService) ClaimHandle(name, address, chain, signature string) (*re
 	// If signature is valid, proceed to save in the database
 	return s.repo.ClaimHandleForWallet(name, address, chain)
 }
+// GetAllByUserID returns all handles belonging to a user.
+func (s *HandleService) GetAllByUserID(
+	userID string,
+) ([]*repository.HandleModel, error) {
+
+	userID = strings.TrimSpace(userID)
+
+	if userID == "" {
+		return nil, errors.New("user ID is required")
+	}
+
+	return s.repo.GetAllByUserID(userID)
+}

@@ -645,7 +645,7 @@ func (r *OIDCRepository) GetClientInfo(clientID string) (*dto.ClientInfoResponse
     var client dto.ClientInfoResponse
 
     err := r.db.QueryRow(`
-        SELECT client_name, client_logo, client_uri, policy_uri
+        SELECT name, client_logo, client_uri, policy_uri
         FROM oauth_clients
         WHERE client_id = $1
     `, clientID).Scan(

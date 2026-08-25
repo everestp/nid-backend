@@ -16,6 +16,104 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+
+// GetUserDashboard retrieves all dashboard data for a given userID in a single query.
+func (r *UserRepository) GetUserDashboard(userID string) (*models.UserDashboard, error) {
+	query := `
+		SELECT
+			u.id,
+			u.created_at,
+
+			-- Fetch all handles
+			COALESCE(
+				(SELECT json_agg(json_build_object(
+					'id', h.id,
+					'handle', h.handle,
+					'is_primary', h.is_primary,
+					'status', h.status
+				) ORDER BY h.is_primary DESC, h.created_at ASC)
+				FROM handles h
+				WHERE h.user_id = u.id),
+				'[]'::json
+			) AS handles,
+
+			-- Fetch social identities
+			COALESCE(
+				(SELECT json_agg(json_build_object(
+					'id', s.id,
+					'platform', s.platform,
+					'handle', s.handle,
+					'verified', s.verified,
+					'publicly_visible', s.publicly_visible
+				) ORDER BY s.verified DESC, s.created_at DESC)
+				FROM social_identities s
+				WHERE s.user_id = u.id),
+				'[]'::json
+			) AS socials,
+
+			-- Fetch wallets
+			COALESCE(
+				(SELECT json_agg(json_build_object(
+					'id', w.id,
+					'chain', w.chain,
+					'network', w.network,
+					'address', w.address,
+					'status', w.status
+				) ORDER BY w.linked_at DESC)
+				FROM wallet_list w
+				WHERE w.user_id = u.id),
+				'[]'::json
+			) AS wallets,
+
+			-- Fetch active sessions
+			COALESCE(
+				(SELECT json_agg(json_build_object(
+					'id', os.id,
+					'client_id', os.client_id,
+					'client_name', os.client_name,
+					'last_used_at', os.last_used_at,
+					'created_at', os.created_at
+				) ORDER BY COALESCE(os.last_used_at, os.created_at) DESC)
+				FROM oauth_sessions os
+				WHERE os.user_id = u.id AND os.status = 'active'),
+				'[]'::json
+			) AS active_sessions
+
+		FROM users u
+		WHERE u.id = $1;
+	`
+
+	dash := &models.UserDashboard{}
+	var handlesJSON, socialsJSON, walletsJSON, sessionsJSON []byte
+
+	err := r.db.QueryRow(query, userID).Scan(
+		&dash.UserID,
+		&dash.CreatedAt,
+		&handlesJSON,
+		&socialsJSON,
+		&walletsJSON,
+		&sessionsJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal JSON aggregations into Go structs
+	if err := json.Unmarshal(handlesJSON, &dash.Handles); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(socialsJSON, &dash.Socials); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(walletsJSON, &dash.Wallets); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(sessionsJSON, &dash.ActiveSessions); err != nil {
+		return nil, err
+	}
+
+	return dash, nil
+}
 // FindUserByID returns a user by ID.
 func (r *UserRepository) FindUserByID(userID string) (*models.User, error) {
 	query := `
@@ -36,7 +134,26 @@ func (r *UserRepository) FindUserByID(userID string) (*models.User, error) {
 
 	return u, nil
 }
+func (r *UserRepository) GetCurrentLoggedInUser(userID string) (*models.User, error) {
+	query := `
+		SELECT id, created_at
+		FROM users
+		WHERE id = $1
+	`
 
+	u := &models.User{}
+
+	err := r.db.QueryRow(query, userID).Scan(
+		&u.ID,
+		&u.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return u, nil
+}
 // FindHandlesByUserID returns all active handles for a user.
 func (r *UserRepository) FindHandlesByUserID(userID string) ([]string, error) {
 	query := `

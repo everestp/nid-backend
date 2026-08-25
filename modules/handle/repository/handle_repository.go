@@ -82,3 +82,42 @@ func (r *HandleRepository) ClaimHandleForWallet(name, address, chain string) (*H
 
 	return &handle, nil
 }
+// GetAllByUserID returns all handles owned by a user.
+func (r *HandleRepository) GetAllByUserID(userID string) ([]*HandleModel, error) {
+	rows, err := r.db.Query(`
+		SELECT id, user_id, handle, status, is_primary, created_at
+		FROM handles
+		WHERE user_id = $1
+		ORDER BY is_primary DESC, created_at ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var handles []*HandleModel
+
+	for rows.Next() {
+		var handle HandleModel
+
+		err := rows.Scan(
+			&handle.ID,
+			&handle.UserID,
+			&handle.Name,
+			&handle.Status,
+			&handle.Primary,
+			&handle.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		handles = append(handles, &handle)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return handles, nil
+}

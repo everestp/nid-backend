@@ -280,7 +280,11 @@ func main() {
 		"POST /api/v1/oauth/clients/{id}/rotate-secret",
 		protected(oidcController.RotateClientSecretHandler),
 	)
-
+// Get All Handles By Authenticated User
+mux.HandleFunc(
+	"GET /api/v1/handles",
+protected(handleController.GetAllByUserIDHandler),
+)
 	// ============================================================
 	// PROTECTED - WALLET LIST
 	// ============================================================
@@ -341,7 +345,14 @@ func main() {
 		"GET /api/v1/user/profile",
 		protected(userController.GetProfileHandler),
 	)
-
+	mux.HandleFunc(
+    "GET /api/v1/user/dashboard",
+    protected(userController.GetDashboardHandler),
+)
+mux.HandleFunc(
+	"GET /api/v1/auth/me",
+	protected(userController.GetCurrentLoggedInUserHandler),
+)
 	// ============================================================
 	// PROTECTED - SOCIAL
 	// ============================================================
