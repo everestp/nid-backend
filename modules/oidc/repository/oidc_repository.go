@@ -7,19 +7,55 @@ import (
 	"errors"
 	"time"
 
-	"nid-backend/modules/oidc/dto"
-
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ============================================================
+// OIDC Repository
+// ============================================================
 
 type OIDCRepository struct {
 	db *sql.DB
 }
 
+// ============================================================
+// Constructor
+// ============================================================
+
 func NewOIDCRepository(db *sql.DB) *OIDCRepository {
 	return &OIDCRepository{
 		db: db,
 	}
+}
+
+// ============================================================
+// Models
+// ============================================================
+
+type OAuthClient struct {
+	ClientID         string
+	ClientSecretHash string
+	Name             string
+	RedirectURI      string
+	ClientType       string
+}
+
+type AuthorizationCode struct {
+	UserID              string
+	ClientID            string
+	RedirectURI         string
+	Scope               string
+	Nonce               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	ExpiresAt           time.Time
+}
+
+type AccessToken struct {
+	UserID    string
+	ClientID  string
+	Scope     string
+	ExpiresAt time.Time
 }
 
 // ============================================================
@@ -54,24 +90,15 @@ func (r *OIDCRepository) CreateClient(
 	return err
 }
 
+// ============================================================
+// Get Client
+// ============================================================
+
 func (r *OIDCRepository) GetClient(
 	clientID string,
-) (
-	string,
-	string,
-	string,
-	string,
-	string,
-	error,
-) {
+) (*OAuthClient, error) {
 
-	var (
-		dbClientID      string
-		clientSecretHash string
-		name            string
-		redirectURI     string
-		clientType      string
-	)
+	var client OAuthClient
 
 	err := r.db.QueryRow(`
 		SELECT
@@ -85,31 +112,34 @@ func (r *OIDCRepository) GetClient(
 	`,
 		clientID,
 	).Scan(
-		&dbClientID,
-		&clientSecretHash,
-		&name,
-		&redirectURI,
-		&clientType,
+		&client.ClientID,
+		&client.ClientSecretHash,
+		&client.Name,
+		&client.RedirectURI,
+		&client.ClientType,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", "", "", "", "", errors.New("client not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("client not found")
 		}
 
-		return "", "", "", "", "", err
+		return nil, err
 	}
 
-	return dbClientID,
-		clientSecretHash,
-		name,
-		redirectURI,
-		clientType,
-		nil
+	return &client, nil
 }
 
 // ============================================================
 // Validate Client
+//
+// Used by /oauth/token.
+//
+// Confidential client:
+//   - client_secret required
+//
+// Public client:
+//   - no client_secret required
 // ============================================================
 
 func (r *OIDCRepository) ValidateClient(
@@ -118,23 +148,29 @@ func (r *OIDCRepository) ValidateClient(
 	redirectURI string,
 ) error {
 
-	_, secretHash, _, registeredRedirectURI, _, err :=
-		r.GetClient(clientID)
-
+	client, err := r.GetClient(clientID)
 	if err != nil {
 		return errors.New("invalid client")
 	}
 
-	if registeredRedirectURI != redirectURI {
+	// Exact redirect URI validation.
+	if client.RedirectURI != redirectURI {
 		return errors.New("invalid redirect uri")
 	}
 
-	if secretHash == "" {
+	// Public clients do not have a secret.
+	if client.ClientType == "public" {
+		return nil
+	}
+
+	// Confidential client must have secret hash.
+	if client.ClientSecretHash == "" {
 		return errors.New("client authentication required")
 	}
 
+	// Validate secret.
 	if err := bcrypt.CompareHashAndPassword(
-		[]byte(secretHash),
+		[]byte(client.ClientSecretHash),
 		[]byte(clientSecret),
 	); err != nil {
 		return errors.New("invalid client credentials")
@@ -144,7 +180,56 @@ func (r *OIDCRepository) ValidateClient(
 }
 
 // ============================================================
+// Validate Redirect URI
+//
+// IMPORTANT:
+//
+// Authorization endpoint must validate redirect_uri
+// before doing any redirect.
+//
+// Never redirect to an unregistered URI.
+// ============================================================
+
+func (r *OIDCRepository) ValidateRedirectURI(
+	clientID string,
+	redirectURI string,
+) error {
+
+	var registeredURI string
+
+	err := r.db.QueryRow(`
+		SELECT redirect_uri
+		FROM oauth_clients
+		WHERE client_id = $1
+	`,
+		clientID,
+	).Scan(&registeredURI)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("client not found")
+		}
+
+		return err
+	}
+
+	if registeredURI != redirectURI {
+		return errors.New("invalid redirect uri")
+	}
+
+	return nil
+}
+
+// ============================================================
 // Authorization Code
+//
+// Raw code is NEVER stored.
+//
+// DB stores:
+//
+// SHA256(code)
+//
+// Code expires after 60 seconds.
 // ============================================================
 
 func (r *OIDCRepository) SaveAuthorizationCode(
@@ -155,13 +240,17 @@ func (r *OIDCRepository) SaveAuthorizationCode(
 	scope string,
 	nonce string,
 	codeChallenge string,
+	codeChallengeMethod string,
 ) error {
 
 	hash := sha256.Sum256([]byte(code))
-
 	codeHash := hex.EncodeToString(hash[:])
 
 	expiresAt := time.Now().Add(60 * time.Second)
+
+	if codeChallengeMethod == "" {
+		codeChallengeMethod = "S256"
+	}
 
 	_, err := r.db.Exec(`
 		INSERT INTO oauth_codes (
@@ -175,7 +264,17 @@ func (r *OIDCRepository) SaveAuthorizationCode(
 			code_challenge_method,
 			expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'S256', $8)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5,
+			$6,
+			$7,
+			$8,
+			$9
+		)
 	`,
 		codeHash,
 		clientID,
@@ -184,6 +283,7 @@ func (r *OIDCRepository) SaveAuthorizationCode(
 		scope,
 		nonce,
 		codeChallenge,
+		codeChallengeMethod,
 		expiresAt,
 	)
 
@@ -192,17 +292,22 @@ func (r *OIDCRepository) SaveAuthorizationCode(
 
 // ============================================================
 // Consume Authorization Code
+//
+// Steps:
+//
+// 1. Hash raw authorization code
+// 2. Start transaction
+// 3. SELECT ... FOR UPDATE
+// 4. Check client
+// 5. Check redirect URI
+// 6. Check unused
+// 7. Check expiration
+// 8. Mark as used
+// 9. Commit
+// 10. Return authorization code data
+//
+// This prevents authorization-code replay.
 // ============================================================
-
-type AuthorizationCode struct {
-	UserID          string
-	ClientID        string
-	RedirectURI     string
-	Scope           string
-	Nonce           string
-	CodeChallenge   string
-	ExpiresAt       time.Time
-}
 
 func (r *OIDCRepository) ConsumeAuthorizationCode(
 	code string,
@@ -211,7 +316,6 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 ) (*AuthorizationCode, error) {
 
 	hash := sha256.Sum256([]byte(code))
-
 	codeHash := hex.EncodeToString(hash[:])
 
 	tx, err := r.db.Begin()
@@ -231,12 +335,13 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 			scope,
 			COALESCE(nonce, ''),
 			code_challenge,
+			COALESCE(code_challenge_method, 'S256'),
 			expires_at
 		FROM oauth_codes
 		WHERE code_hash = $1
-		  AND client_id = $2
-		  AND redirect_uri = $3
-		  AND used_at IS NULL
+			AND client_id = $2
+			AND redirect_uri = $3
+			AND used_at IS NULL
 		FOR UPDATE
 	`,
 		codeHash,
@@ -249,11 +354,12 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 		&result.Scope,
 		&result.Nonce,
 		&result.CodeChallenge,
+		&result.CodeChallengeMethod,
 		&result.ExpiresAt,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New(
 				"invalid authorization code",
 			)
@@ -262,16 +368,25 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 		return nil, err
 	}
 
+	// --------------------------------------------------------
+	// Expiration
+	// --------------------------------------------------------
+
 	if time.Now().After(result.ExpiresAt) {
 		return nil, errors.New(
 			"authorization code expired",
 		)
 	}
 
-	_, err = tx.Exec(`
+	// --------------------------------------------------------
+	// Mark authorization code as used
+	// --------------------------------------------------------
+
+	res, err := tx.Exec(`
 		UPDATE oauth_codes
 		SET used_at = CURRENT_TIMESTAMP
 		WHERE code_hash = $1
+			AND used_at IS NULL
 	`,
 		codeHash,
 	)
@@ -279,6 +394,21 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 	if err != nil {
 		return nil, err
 	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+
+	if rowsAffected != 1 {
+		return nil, errors.New(
+			"authorization code already used",
+		)
+	}
+
+	// --------------------------------------------------------
+	// Commit
+	// --------------------------------------------------------
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -307,7 +437,13 @@ func (r *OIDCRepository) SaveAccessToken(
 			scope,
 			expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5
+		)
 	`,
 		tokenHash,
 		clientID,
@@ -320,7 +456,13 @@ func (r *OIDCRepository) SaveAccessToken(
 }
 
 // ============================================================
-// Access Token Validation
+// Get User By Access Token
+//
+// Used by:
+//
+// GET /oauth/userinfo
+//
+// Only active and non-expired tokens are accepted.
 // ============================================================
 
 func (r *OIDCRepository) GetUserByAccessToken(
@@ -333,15 +475,17 @@ func (r *OIDCRepository) GetUserByAccessToken(
 		SELECT user_id
 		FROM oauth_access_tokens
 		WHERE token_hash = $1
-		  AND revoked_at IS NULL
-		  AND expires_at > CURRENT_TIMESTAMP
+			AND revoked_at IS NULL
+			AND expires_at > CURRENT_TIMESTAMP
 	`,
 		tokenHash,
 	).Scan(&userID)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", errors.New("invalid access token")
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New(
+				"invalid access token",
+			)
 		}
 
 		return "", err
@@ -351,7 +495,81 @@ func (r *OIDCRepository) GetUserByAccessToken(
 }
 
 // ============================================================
+// Get Access Token
+//
+// Useful when you need:
+//
+// - user_id
+// - client_id
+// - scope
+// - expiry
+// ============================================================
+
+func (r *OIDCRepository) GetAccessToken(
+	tokenHash string,
+) (*AccessToken, error) {
+
+	var token AccessToken
+
+	err := r.db.QueryRow(`
+		SELECT
+			user_id,
+			client_id,
+			scope,
+			expires_at
+		FROM oauth_access_tokens
+		WHERE token_hash = $1
+			AND revoked_at IS NULL
+			AND expires_at > CURRENT_TIMESTAMP
+	`,
+		tokenHash,
+	).Scan(
+		&token.UserID,
+		&token.ClientID,
+		&token.Scope,
+		&token.ExpiresAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New(
+				"invalid access token",
+			)
+		}
+
+		return nil, err
+	}
+
+	return &token, nil
+}
+
+// ============================================================
+// Revoke Access Token
+// ============================================================
+
+func (r *OIDCRepository) RevokeAccessToken(
+	tokenHash string,
+) error {
+
+	_, err := r.db.Exec(`
+		UPDATE oauth_access_tokens
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE token_hash = $1
+			AND revoked_at IS NULL
+	`,
+		tokenHash,
+	)
+
+	return err
+}
+
+// ============================================================
 // User Handle
+//
+// Returns primary .nid handle.
+//
+// Fallback:
+// oldest handle.
 // ============================================================
 
 func (r *OIDCRepository) GetPrimaryHandleByUserID(
@@ -360,11 +578,15 @@ func (r *OIDCRepository) GetPrimaryHandleByUserID(
 
 	var handle string
 
+	// --------------------------------------------------------
+	// First: primary handle
+	// --------------------------------------------------------
+
 	err := r.db.QueryRow(`
 		SELECT handle
 		FROM handles
 		WHERE user_id = $1
-		  AND is_primary = true
+			AND is_primary = true
 		LIMIT 1
 	`,
 		userID,
@@ -373,6 +595,10 @@ func (r *OIDCRepository) GetPrimaryHandleByUserID(
 	if err == nil {
 		return handle, nil
 	}
+
+	// --------------------------------------------------------
+	// Fallback: oldest handle
+	// --------------------------------------------------------
 
 	err = r.db.QueryRow(`
 		SELECT handle
@@ -385,13 +611,14 @@ func (r *OIDCRepository) GetPrimaryHandleByUserID(
 	).Scan(&handle)
 
 	if err != nil {
-		return "", errors.New(
-			"no handle found for user",
-		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New(
+				"no handle found for user",
+			)
+		}
+
+		return "", err
 	}
 
 	return handle, nil
 }
-
-// Keep DTO imported if you later expand repository methods.
-var _ = dto.TokenResponse{}

@@ -1,18 +1,32 @@
 package middleware
 
-import (
-	"net/http"
-)
+import "net/http"
+
+var allowedOrigins = map[string]bool{
+	"http://localhost:5173": true, // NID frontend
+	"http://localhost:5374": true, // demo application
+}
 
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		origin := r.Header.Get("Origin")
 
-		// Allow your NID frontend
-		if origin == "http://localhost:5173" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if allowedOrigins[origin] {
+			w.Header().Set(
+				"Access-Control-Allow-Origin",
+				origin,
+			)
+
+			w.Header().Set(
+				"Access-Control-Allow-Credentials",
+				"true",
+			)
+
+			w.Header().Set(
+				"Vary",
+				"Origin",
+			)
 		}
 
 		w.Header().Set(
@@ -25,12 +39,6 @@ func CORSMiddleware(next http.Handler) http.Handler {
 			"Accept, Authorization, Content-Type, X-CSRF-Token",
 		)
 
-		w.Header().Set(
-			"Access-Control-Expose-Headers",
-			"Content-Length, Content-Type",
-		)
-
-		// Important for preflight
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

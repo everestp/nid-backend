@@ -1,9 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"log"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -48,7 +54,9 @@ func main() {
 	// ============================================================
 
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, relying on system environment variables")
+		log.Println(
+			"No .env file found, relying on system environment variables",
+		)
 	}
 
 	cfg := config.LoadConfig()
@@ -59,7 +67,10 @@ func main() {
 
 	db, err := database.ConnectDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf(
+			"Failed to connect to database: %v",
+			err,
+		)
 	}
 
 	defer db.Close()
@@ -68,80 +79,129 @@ func main() {
 	// Repositories
 	// ============================================================
 
-	authRepoInstance := authRepo.NewAuthRepository(db)
+	authRepoInstance :=
+		authRepo.NewAuthRepository(db)
 
-	handleRepoInstance := handleRepo.NewHandleRepository(db)
+	handleRepoInstance :=
+		handleRepo.NewHandleRepository(db)
 
-	walletRepoInstance := walletRepo.NewWalletRepository(db)
+	walletRepoInstance :=
+		walletRepo.NewWalletRepository(db)
 
-	resolutionRepoInstance := resRepo.NewResolutionRepository(db)
+	resolutionRepoInstance :=
+		resRepo.NewResolutionRepository(db)
 
-	sessionRepoInstance := sesRepo.NewSessionRepository(db)
+	sessionRepoInstance :=
+		sesRepo.NewSessionRepository(db)
 
-	userRepoInstance := userRepo.NewUserRepository(db)
+	userRepoInstance :=
+		userRepo.NewUserRepository(db)
 
-	oidcRepoInstance := oidcRepo.NewOIDCRepository(db)
-var oidcPrivateKey *rsa.PrivateKey
+	oidcRepoInstance :=
+		oidcRepo.NewOIDCRepository(db)
+
+	// ============================================================
+	// OIDC Signing Key
+	// ============================================================
+
+	oidcPrivateKey, err := loadOIDCPrivateKey()
+	if err != nil {
+		log.Fatalf(
+			"Failed to load OIDC private key: %v",
+			err,
+		)
+	}
+
 	// ============================================================
 	// Services
 	// ============================================================
 
-	authService := authSvc.NewAuthService(authRepoInstance)
+	authService :=
+		authSvc.NewAuthService(
+			authRepoInstance,
+		)
 
-	handleService := handleSvc.NewHandleService(handleRepoInstance)
+	handleService :=
+		handleSvc.NewHandleService(
+			handleRepoInstance,
+		)
 
-	walletService := walletSvc.NewWalletService(walletRepoInstance)
+	walletService :=
+		walletSvc.NewWalletService(
+			walletRepoInstance,
+		)
 
-	resolutionService := resSvc.NewResolutionService(
-		resolutionRepoInstance,
+	resolutionService :=
+		resSvc.NewResolutionService(
+			resolutionRepoInstance,
+		)
+
+	sessionService :=
+		sesSvc.NewSessionService(
+			sessionRepoInstance,
+		)
+
+	userService :=
+		userSvc.NewUserService(
+			userRepoInstance,
+		)
+
+	oidcIssuer := getEnv(
+		"NID_OIDC_ISSUER",
+		"https://nid.xyz",
 	)
 
-	sessionService := sesSvc.NewSessionService(
-		sessionRepoInstance,
+	oidcKeyID := getEnv(
+		"NID_OIDC_KEY_ID",
+		"nid-2026-01",
 	)
 
-	userService := userSvc.NewUserService(
-		userRepoInstance,
-	)
-
-oidcService := oidcSvc.NewOIDCService(
-	oidcRepoInstance,
-	oidcPrivateKey,
-	"https://nid.xyz",
-	"nid-2026-01",
-)
+	oidcService :=
+		oidcSvc.NewOIDCService(
+			oidcRepoInstance,
+			oidcPrivateKey,
+			oidcIssuer,
+			oidcKeyID,
+		)
 
 	// ============================================================
 	// Controllers
 	// ============================================================
 
-	authController := authCtrl.NewAuthController(
-		authService,
-	)
+	authController :=
+		authCtrl.NewAuthController(
+			authService,
+		)
 
-	handleController := handleCtrl.NewHandleController(
-		handleService,
-	)
+	handleController :=
+		handleCtrl.NewHandleController(
+			handleService,
+		)
 
-	walletController := walletCtrl.NewWalletController(
-		walletService,
-	)
+	walletController :=
+		walletCtrl.NewWalletController(
+			walletService,
+		)
 
-	resolutionController := resCtrl.NewResolutionController(
-		resolutionService,
-	)
+	resolutionController :=
+		resCtrl.NewResolutionController(
+			resolutionService,
+		)
 
-	sessionController := sesCtrl.NewSessionController(
-		sessionService,
-	)
+	sessionController :=
+		sesCtrl.NewSessionController(
+			sessionService,
+		)
 
-	userController := userCtrl.NewUserController(
-		userService,
-	)
+	userController :=
+		userCtrl.NewUserController(
+			userService,
+		)
 
-	oidcController := oidcCtrl.NewOIDCController(
-		oidcService,
-	)
+	oidcController :=
+		oidcCtrl.NewOIDCController(
+			oidcService,
+		)
 
 	// ============================================================
 	// Main Router
@@ -153,24 +213,34 @@ oidcService := oidcSvc.NewOIDCService(
 	// 1. Health
 	// ============================================================
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(
+		"/health",
+		func(w http.ResponseWriter, r *http.Request) {
 
-		if r.Method != http.MethodGet {
-			http.Error(
-				w,
-				"method not allowed",
-				http.StatusMethodNotAllowed,
+			if r.Method != http.MethodGet {
+				http.Error(
+					w,
+					"method not allowed",
+					http.StatusMethodNotAllowed,
+				)
+				return
+			}
+
+			w.Header().Set(
+				"Content-Type",
+				"text/plain; charset=utf-8",
 			)
-			return
-		}
 
-		w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusOK)
 
-		_, _ = w.Write([]byte("OK"))
-	})
+			_, _ = w.Write(
+				[]byte("OK"),
+			)
+		},
+	)
 
 	// ============================================================
-	// 2. Core Public Routes
+	// 2. Core Public API
 	// ============================================================
 
 	// Wallet login / NID login
@@ -196,18 +266,12 @@ oidcService := oidcSvc.NewOIDCService(
 	// ============================================================
 
 	// ------------------------------------------------------------
-	// Dynamic Client Registration
-	//
-	// Third-party applications can register themselves here.
+	// Client Registration
 	//
 	// POST /oauth/register
 	//
-	// Returns:
-	// {
-	//   "client_id": "...",
-	//   "client_secret": "...",
-	//   ...
-	// }
+	// IMPORTANT:
+	// Protect this endpoint in production.
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -222,12 +286,17 @@ oidcService := oidcSvc.NewOIDCService(
 	//
 	// Example:
 	//
-	// /oauth/authorize?
-	//   client_id=...
-	//   &redirect_uri=https://app.com/callback
-	//   &response_type=code
-	//   &scope=openid
-	//   &state=xyz
+	// https://nid.xyz/oauth/authorize?
+	// client_id=xxx
+	// &redirect_uri=https://client.xyz/callback
+	// &response_type=code
+	// &scope=openid%20profile
+	// &state=xxx
+	// &nonce=xxx
+	// &code_challenge=xxx
+	// &code_challenge_method=S256
+	//
+	// This endpoint is responsible for the NID authorization UI.
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -240,9 +309,7 @@ oidcService := oidcSvc.NewOIDCService(
 	//
 	// POST /oauth/token
 	//
-	// Exchanges authorization code for:
-	// - access_token
-	// - id_token
+	// Authorization Code + PKCE -> tokens
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -254,8 +321,6 @@ oidcService := oidcSvc.NewOIDCService(
 	// UserInfo Endpoint
 	//
 	// GET /oauth/userinfo
-	//
-	// Used by OIDC clients to obtain user claims.
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -263,11 +328,9 @@ oidcService := oidcSvc.NewOIDCService(
 		oidcController.UserInfoHandler,
 	)
 
-	// ------------------------------------------------------------
-	// OpenID Connect Discovery
-	//
-	// GET /.well-known/openid-configuration
-	// ------------------------------------------------------------
+	// ============================================================
+	// 4. OpenID Connect Discovery
+	// ============================================================
 
 	mux.HandleFunc(
 		"/.well-known/openid-configuration",
@@ -275,50 +338,74 @@ oidcService := oidcSvc.NewOIDCService(
 	)
 
 	// ============================================================
-	// 4. Protected Routes
+	// 5. JWKS
+	// ============================================================
+
+	mux.HandleFunc(
+		"/.well-known/jwks.json",
+		oidcController.JWKSHandler,
+	)
+
+	// ============================================================
+	// 6. Protected Routes
 	// ============================================================
 
 	protectedMux := http.NewServeMux()
 
+	// ------------------------------------------------------------
 	// Link wallet
+	// ------------------------------------------------------------
+
 	protectedMux.HandleFunc(
 		"/api/v1/wallets/link",
 		walletController.LinkWalletHandler,
 	)
 
+	// ------------------------------------------------------------
 	// Revoke session
+	// ------------------------------------------------------------
+
 	protectedMux.HandleFunc(
 		"/api/v1/sessions/revoke",
 		sessionController.RevokeHandler,
 	)
 
+	// ------------------------------------------------------------
 	// User profile
+	// ------------------------------------------------------------
+
 	protectedMux.HandleFunc(
 		"/api/v1/user/profile",
 		userController.GetProfileHandler,
 	)
 
 	// ============================================================
-	// 5. Authentication Middleware
+	// 7. Authentication Middleware
 	// ============================================================
 
 	mux.Handle(
 		"/api/v1/wallets/",
-		middleware.AuthMiddleware(protectedMux),
+		middleware.AuthMiddleware(
+			protectedMux,
+		),
 	)
 
 	mux.Handle(
 		"/api/v1/sessions/",
-		middleware.AuthMiddleware(protectedMux),
+		middleware.AuthMiddleware(
+			protectedMux,
+		),
 	)
 
 	mux.Handle(
 		"/api/v1/user/",
-		middleware.AuthMiddleware(protectedMux),
+		middleware.AuthMiddleware(
+			protectedMux,
+		),
 	)
 
 	// ============================================================
-	// 6. Global Middleware
+	// 8. Global Middleware
 	// ============================================================
 
 	handler := middleware.CORSMiddleware(
@@ -326,22 +413,171 @@ oidcService := oidcSvc.NewOIDCService(
 	)
 
 	// ============================================================
-	// 7. Start Server
+	// 9. HTTP Server
 	// ============================================================
 
+	port := cfg.Port
+
+	if strings.TrimSpace(port) == "" {
+		port = "8080"
+	}
+
 	log.Printf(
-		"Server starting on port %s...",
-		cfg.Port,
+		"NID backend starting on port %s",
+		port,
 	)
 
-	if err := http.ListenAndServe(
-		":"+cfg.Port,
-		handler,
-	); err != nil {
+	log.Printf(
+		"OIDC issuer: %s",
+		oidcIssuer,
+	)
 
-		log.Fatalf(
-			"Server failed: %v",
-			err,
+	log.Printf(
+		"OIDC authorization endpoint: %s/oauth/authorize",
+		oidcIssuer,
+	)
+
+	log.Printf(
+		"OIDC token endpoint: %s/oauth/token",
+		oidcIssuer,
+	)
+
+	log.Printf(
+		"OIDC JWKS endpoint: %s/.well-known/jwks.json",
+		oidcIssuer,
+	)
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: handler,
+
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
+		if err != http.ErrServerClosed {
+			log.Fatalf(
+				"Server failed: %v",
+				err,
+			)
+		}
+	}
+}
+
+// ============================================================
+// Environment Helper
+// ============================================================
+
+func getEnv(
+	key string,
+	fallback string,
+) string {
+
+	value := strings.TrimSpace(
+		os.Getenv(key),
+	)
+
+	if value == "" {
+		return fallback
+	}
+
+	return value
+}
+
+// ============================================================
+// Load OIDC Private Key
+// ============================================================
+//
+// Expected environment variable:
+//
+// NID_OIDC_PRIVATE_KEY
+//
+// It can contain:
+//
+// -----BEGIN RSA PRIVATE KEY-----
+// ...
+// -----END RSA PRIVATE KEY-----
+//
+// or:
+//
+// -----BEGIN PRIVATE KEY-----
+// ...
+// -----END PRIVATE KEY-----
+//
+// ============================================================
+
+func loadOIDCPrivateKey() (*rsa.PrivateKey, error) {
+
+	privateKeyPEM := strings.TrimSpace(
+		os.Getenv("NID_OIDC_PRIVATE_KEY"),
+	)
+
+	// ------------------------------------------------------------
+	// If key doesn't exist, generate one for development.
+	//
+	// DO NOT use this behavior in production because restarting
+	// the server will generate a new signing key and old ID tokens
+	// will no longer validate.
+	// ------------------------------------------------------------
+
+	if privateKeyPEM == "" {
+
+		log.Println(
+			"WARNING: NID_OIDC_PRIVATE_KEY is not configured",
+		)
+
+		log.Println(
+			"Generating temporary RSA key for development",
+		)
+
+		return rsa.GenerateKey(
+			rand.Reader,
+			2048,
 		)
 	}
+
+	// ------------------------------------------------------------
+	// Decode PEM
+	// ------------------------------------------------------------
+
+	block, _ := pem.Decode(
+		[]byte(privateKeyPEM),
+	)
+
+	if block == nil {
+		return nil, os.ErrInvalid
+	}
+
+	// ------------------------------------------------------------
+	// PKCS#1
+	// ------------------------------------------------------------
+
+	if key, err := x509.ParsePKCS1PrivateKey(
+		block.Bytes,
+	); err == nil {
+
+		return key, nil
+	}
+
+	// ------------------------------------------------------------
+	// PKCS#8
+	// ------------------------------------------------------------
+
+	key, err := x509.ParsePKCS8PrivateKey(
+		block.Bytes,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, os.ErrInvalid
+	}
+
+	return rsaKey, nil
 }

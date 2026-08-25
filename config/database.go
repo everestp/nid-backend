@@ -8,6 +8,7 @@ import (
 type Config struct {
 	DatabaseURL string
 	Port        string
+	FrontendURL   string
 }
 
 func LoadConfig() *Config {
@@ -19,8 +20,13 @@ func LoadConfig() *Config {
 	if port == "" {
 		port = "8080"
 	}
+	FrontendURL := os.Getenv("PORT")
+	if port == "" {
+		port = "http://localhost:5173"
+	}
 	return &Config{
 		DatabaseURL: dbURL,
 		Port:        port,
+		FrontendURL: FrontendURL,
 	}
 }
