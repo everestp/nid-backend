@@ -11,6 +11,7 @@ import (
 	"nid-backend/modules/oidc/dto"
 	"nid-backend/modules/oidc/service"
 	"nid-backend/pkg/helpers"
+	"nid-backend/pkg/middleware"
 )
 
 type OIDCController struct {
@@ -61,6 +62,22 @@ func (c *OIDCController) RegisterClientHandler(
 		)
 		return
 	}
+	// --------------------------------------------------------
+	// Get user ID from authenticated session
+	// --------------------------------------------------------
+
+	userID, ok := r.Context().Value(
+		middleware.UserIDKey,
+	).(string)
+
+	if !ok || userID == "" {
+		http.Error(
+			w,
+			"Unauthorized",
+			http.StatusUnauthorized,
+		)
+		return
+	}
 
 	var req dto.RegisterClientRequest
 
@@ -73,7 +90,7 @@ func (c *OIDCController) RegisterClientHandler(
 		return
 	}
 
-	result, err := c.service.RegisterClient(req)
+	result, err := c.service.RegisterClient(req ,userID)
 	if err != nil {
 		http.Error(
 			w,
@@ -96,6 +113,226 @@ func (c *OIDCController) RegisterClientHandler(
 			err,
 		)
 	}
+}
+
+// ============================================================
+// Delete Client Handler
+// ============================================================
+//
+// DELETE /oauth/clients/{id}
+// ============================================================
+
+func (c *OIDCController) DeleteClientHandler(
+    w http.ResponseWriter,
+    r *http.Request,
+) {
+    if r.Method != http.MethodDelete {
+        http.Error(
+            w,
+            "method not allowed",
+            http.StatusMethodNotAllowed,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Authenticate user
+    // --------------------------------------------------------
+
+    userID, ok := r.Context().Value(
+        middleware.UserIDKey,
+    ).(string)
+
+    if !ok || userID == "" {
+        http.Error(
+            w,
+            "Unauthorized",
+            http.StatusUnauthorized,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Get internal client ID from path (or query fallback)
+    // --------------------------------------------------------
+
+    clientID := r.PathValue("id")
+    if clientID == "" {
+        clientID = r.URL.Query().Get("id")
+    }
+
+    if clientID == "" {
+        http.Error(
+            w,
+            "client id is required",
+            http.StatusBadRequest,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Call service
+    // --------------------------------------------------------
+
+    err := c.service.DeleteClient(clientID)
+    if err != nil {
+        statusCode := http.StatusBadRequest
+        if err.Error() == "client not found" {
+            statusCode = http.StatusNotFound
+        }
+
+        http.Error(
+            w,
+            err.Error(),
+            statusCode,
+        )
+        return
+    }
+
+    w.WriteHeader(http.StatusNoContent)
+}
+
+// ============================================================
+// Rotate Client Secret Handler
+// ============================================================
+//
+// POST /oauth/clients/{id}/rotate-secret
+// ============================================================
+
+func (c *OIDCController) RotateClientSecretHandler(
+    w http.ResponseWriter,
+    r *http.Request,
+) {
+    if r.Method != http.MethodPost {
+        http.Error(
+            w,
+            "method not allowed",
+            http.StatusMethodNotAllowed,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Authenticate user
+    // --------------------------------------------------------
+
+    userID, ok := r.Context().Value(
+        middleware.UserIDKey,
+    ).(string)
+
+    if !ok || userID == "" {
+        http.Error(
+            w,
+            "Unauthorized",
+            http.StatusUnauthorized,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Get internal client ID from path (or query fallback)
+    // --------------------------------------------------------
+
+    clientID := r.PathValue("id")
+    if clientID == "" {
+        clientID = r.URL.Query().Get("id")
+    }
+
+    if clientID == "" {
+        http.Error(
+            w,
+            "client id is required",
+            http.StatusBadRequest,
+        )
+        return
+    }
+
+    // --------------------------------------------------------
+    // Call service
+    // --------------------------------------------------------
+
+    result, err := c.service.RotateClientSecret(clientID)
+    if err != nil {
+        statusCode := http.StatusBadRequest
+        if err.Error() == "client not found" {
+            statusCode = http.StatusNotFound
+        }
+
+        http.Error(
+            w,
+            err.Error(),
+            statusCode,
+        )
+        return
+    }
+
+    w.Header().Set(
+        "Content-Type",
+        "application/json",
+    )
+
+    w.WriteHeader(http.StatusOK)
+
+    if err := json.NewEncoder(w).Encode(result); err != nil {
+        log.Printf(
+            "failed encoding rotate secret response: %v",
+            err,
+        )
+    }
+}
+
+func (c *OIDCController) ListAllByUserHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	// --------------------------------------------------------
+	// Get user ID from authenticated session
+	// --------------------------------------------------------
+
+	userID, ok := r.Context().Value(
+		middleware.UserIDKey,
+	).(string)
+
+	if !ok || userID == "" {
+		http.Error(
+			w,
+			"Unauthorized",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	// --------------------------------------------------------
+	// Get clients
+	// --------------------------------------------------------
+
+	clients, err := c.service.ListAllByUser(userID)
+	if err != nil {
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	// --------------------------------------------------------
+	// Response
+	// --------------------------------------------------------
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(
+		map[string]interface{}{
+			"success": true,
+			"clients": clients,
+		},
+	)
 }
 
 // ============================================================

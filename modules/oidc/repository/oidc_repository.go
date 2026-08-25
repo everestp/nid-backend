@@ -67,6 +67,7 @@ type AccessToken struct {
 
 func (r *OIDCRepository) CreateClient(
     clientID string,
+	userID   string,
     clientSecretHash string,
     clientName string,
     redirectURI string,
@@ -80,14 +81,15 @@ func (r *OIDCRepository) CreateClient(
         INSERT INTO oauth_clients (
             client_id,
             client_secret_hash,
-            client_name,
+            name,
             redirect_uri,
             client_type,
             client_logo,
             client_uri,
-            policy_uri
+            policy_uri,
+			user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8 , $9)
     `,
         clientID,
         clientSecretHash,
@@ -97,6 +99,7 @@ func (r *OIDCRepository) CreateClient(
         clientLogo,
         clientURI,
         policyURI,
+		userID,
     )
 
     return err
@@ -711,6 +714,72 @@ func (r *OIDCRepository) TouchSession(
 
     return err
 }
+
+
+
+func (r *OIDCRepository) ListAllByUser(
+	userID string,
+) ([]dto.OAuthClientInfo, error) {
+
+	rows, err := r.db.QueryContext(
+		context.Background(),
+		`
+		SELECT
+			id,
+			client_id,
+			user_id,
+			name,
+			redirect_uri,
+			client_type,
+			client_logo,
+			client_uri,
+			policy_uri,
+			created_at,
+			updated_at
+		FROM oauth_clients
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	clients := make([]dto.OAuthClientInfo, 0)
+
+	for rows.Next() {
+		var client dto.OAuthClientInfo
+
+		err := rows.Scan(
+			&client.ID,
+			&client.ClientID,
+			&client.UserID,
+			&client.ClientName,
+			&client.RedirectURI,
+			&client.ClientType,
+			&client.ClientLogo,
+			&client.ClientURI,
+			&client.PolicyURI,
+			&client.CreatedAt,
+			&client.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		clients = append(clients, client)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return clients, nil
+}
+
 func (r *OIDCRepository) GetUserSessions(
     userID string,
 ) ([]models.OAuthSession, error) {
@@ -761,4 +830,65 @@ func (r *OIDCRepository) GetUserSessions(
     }
 
     return sessions, rows.Err()
+}
+// ============================================================
+// Delete Client By Internal ID
+// ============================================================
+
+func (r *OIDCRepository) DeleteByID(id string) error {
+    result, err := r.db.ExecContext(
+        context.Background(),
+        `DELETE FROM oauth_clients WHERE id = $1`,
+        id,
+    )
+    if err != nil {
+        return err
+    }
+
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        return err
+    }
+
+    if rowsAffected == 0 {
+        return errors.New("client not found")
+    }
+
+    return nil
+}
+
+// ============================================================
+// Rotate Client Secret By Internal ID
+// ============================================================
+
+func (r *OIDCRepository) RotateSecretByID(
+    id string,
+    newSecretHash string,
+) error {
+
+    result, err := r.db.ExecContext(
+        context.Background(),
+        `
+        UPDATE oauth_clients
+        SET client_secret_hash = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        `,
+        newSecretHash,
+        id,
+    )
+    if err != nil {
+        return err
+    }
+
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        return err
+    }
+
+    if rowsAffected == 0 {
+        return errors.New("client not found")
+    }
+
+    return nil
 }

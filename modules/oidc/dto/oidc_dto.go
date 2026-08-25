@@ -1,5 +1,7 @@
 package dto
 
+import "time"
+
 // ============================================================
 // OAuth / OIDC Client Registration
 // ============================================================
@@ -43,7 +45,9 @@ type RegisterClientResponse struct {
 //   &code_challenge=xxx
 //   &code_challenge_method=S256
 //
-
+type RotateSecretResponse struct {
+    ClientSecret string `json:"client_secret"`
+}
 type AuthorizationRequest struct {
 	ClientID            string `json:"client_id"`
 	RedirectURI         string `json:"redirect_uri"`
@@ -170,4 +174,29 @@ type ClientInfoResponse struct {
 	ClientLogo string `json:"client_logo"`
 	ClientURI  string `json:"client_uri"`
 	PolicyURI  string `json:"policy_uri"`
+}
+type OAuthClientInfo struct {
+	ID         string
+	ClientID   string
+	UserID     string
+	ClientName string
+	RedirectURI string
+	ClientType string
+	ClientLogo string
+	ClientURI  string
+	PolicyURI  string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+type OAuthClientResponse struct {
+	ID          string    `json:"id"`
+	ClientID    string    `json:"client_id"`
+	ClientName  string    `json:"client_name"`
+	RedirectURI string    `json:"redirect_uri"`
+	ClientType  string    `json:"client_type"`
+	ClientLogo  string    `json:"client_logo,omitempty"`
+	ClientURI   string    `json:"client_uri,omitempty"`
+	PolicyURI   string    `json:"policy_uri,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

@@ -95,31 +95,39 @@ CREATE INDEX IF NOT EXISTS idx_wallets_address
 --     confidential
 --     public
 -- ============================================================================
+CREATE TABLE oauth_clients (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE IF NOT EXISTS oauth_clients (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
 
-    client_id VARCHAR(128) NOT NULL UNIQUE,
+    client_id varchar(128) NOT NULL UNIQUE,
 
-    client_secret_hash VARCHAR(255),
+    client_secret_hash varchar(255),
 
-    name VARCHAR(128) NOT NULL,
+    name varchar(128) NOT NULL,
 
-    redirect_uri TEXT NOT NULL,
+    redirect_uri text NOT NULL,
 
-    client_type VARCHAR(32) NOT NULL DEFAULT 'confidential',
+    client_type varchar(32) NOT NULL DEFAULT 'confidential',
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    client_logo varchar(512) DEFAULT '',
+    client_uri varchar(512) DEFAULT '',
+    policy_uri varchar(512) DEFAULT '',
 
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT oauth_clients_client_type_check
         CHECK (client_type IN ('confidential', 'public'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_oauth_clients_client_id
-    ON oauth_clients(client_id);
+CREATE INDEX idx_oauth_clients_user_id
+    ON oauth_clients(user_id);
 
+CREATE INDEX idx_oauth_clients_client_id
+    ON oauth_clients(client_id);
 
 -- ============================================================================
 -- 5. OAUTH AUTHORIZATION CODES
@@ -465,6 +473,38 @@ WHERE id = (
     FROM oauth_access_tokens
     WHERE token_hash = $1
 );
+
+CREATE TABLE wallet_list (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    user_id UUID NOT NULL,
+
+    chain VARCHAR(50) NOT NULL,
+    network VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_wallet_list_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT wallet_list_status_check
+        CHECK (status IN ('verified', 'pending')),
+
+    CONSTRAINT unique_user_wallet
+        UNIQUE (user_id, chain, network, address)
+);
+
+CREATE INDEX idx_wallet_list_user_id
+    ON wallet_list(user_id);
+
+CREATE INDEX idx_wallet_list_lookup
+    ON wallet_list(user_id, chain, network, address);
+
 -- ============================================================================
 -- END
 -- ============================================================================

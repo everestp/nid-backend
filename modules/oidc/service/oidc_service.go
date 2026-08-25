@@ -119,133 +119,149 @@ func verifyPKCE(
 // ============================================================
 
 func (s *OIDCService) RegisterClient(
-    req dto.RegisterClientRequest,
+	req dto.RegisterClientRequest, userID string,
 ) (*dto.RegisterClientResponse, error) {
 
-    // --------------------------------------------------------
-    // Normalize
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Normalize
+	// --------------------------------------------------------
 
-    req.Name = strings.TrimSpace(req.Name)
+	req.Name = strings.TrimSpace(req.Name)
 
-    req.RedirectURI = strings.TrimSpace(
-        req.RedirectURI,
-    )
+	req.RedirectURI = strings.TrimSpace(
+		req.RedirectURI,
+	)
 
-    req.ClientType = strings.ToLower(
-        strings.TrimSpace(req.ClientType),
-    )
+	req.ClientType = strings.ToLower(
+		strings.TrimSpace(req.ClientType),
+	)
 
-    req.ClientLogo = strings.TrimSpace(req.ClientLogo)
-    req.ClientURI = strings.TrimSpace(req.ClientURI)
-    req.PolicyURI = strings.TrimSpace(req.PolicyURI)
+	req.ClientLogo = strings.TrimSpace(
+		req.ClientLogo,
+	)
 
-    // --------------------------------------------------------
-    // Validate name
-    // --------------------------------------------------------
+	req.ClientURI = strings.TrimSpace(
+		req.ClientURI,
+	)
 
-    if req.Name == "" {
-        return nil, errors.New(
-            "client name is required",
-        )
-    }
+	req.PolicyURI = strings.TrimSpace(
+		req.PolicyURI,
+	)
 
-    // --------------------------------------------------------
-    // Validate redirect URI
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Validate client name
+	// --------------------------------------------------------
 
-    if req.RedirectURI == "" {
-        return nil, errors.New(
-            "redirect_uri is required",
-        )
-    }
+	if req.Name == "" {
+		return nil, errors.New(
+			"client name is required",
+		)
+	}
 
-    // --------------------------------------------------------
-    // Default client type
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Validate redirect URI
+	// --------------------------------------------------------
 
-    if req.ClientType == "" {
-        req.ClientType = "confidential"
-    }
+	if req.RedirectURI == "" {
+		return nil, errors.New(
+			"redirect_uri is required",
+		)
+	}
 
-    // --------------------------------------------------------
-    // Validate client type
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Default client type
+	// --------------------------------------------------------
 
-    if req.ClientType != "confidential" &&
-        req.ClientType != "public" {
+	if req.ClientType == "" {
+		req.ClientType = "confidential"
+	}
 
-        return nil, errors.New(
-            "invalid client_type",
-        )
-    }
+	// --------------------------------------------------------
+	// Validate client type
+	// --------------------------------------------------------
 
-    // --------------------------------------------------------
-    // Generate client ID
-    // --------------------------------------------------------
+	if req.ClientType != "confidential" &&
+		req.ClientType != "public" {
 
-    clientID, err := generateRandomString(24)
-    if err != nil {
-        return nil, err
-    }
+		return nil, errors.New(
+			"invalid client_type: must be public or confidential",
+		)
+	}
 
-    // --------------------------------------------------------
-    // Client secret
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Generate client ID
+	// --------------------------------------------------------
 
-    clientSecret := ""
-    secretHash := ""
+	clientID, err := generateRandomString(24)
+	if err != nil {
+		return nil, err
+	}
 
-    if req.ClientType == "confidential" {
+	// --------------------------------------------------------
+	// Client secret
+	//
+	// Confidential:
+	//     Generate secret and store bcrypt hash.
+	//
+	// Public:
+	//     No secret.
+	//     Client must use PKCE.
+	// --------------------------------------------------------
 
-        clientSecret, err = generateRandomString(48)
-        if err != nil {
-            return nil, err
-        }
+	clientSecret := ""
+	secretHash := ""
 
-        hash, err := bcrypt.GenerateFromPassword(
-            []byte(clientSecret),
-            bcrypt.DefaultCost,
-        )
-        if err != nil {
-            return nil, err
-        }
+	if req.ClientType == "confidential" {
 
-        secretHash = string(hash)
-    }
+		clientSecret, err = generateRandomString(48)
+		if err != nil {
+			return nil, err
+		}
 
-    // --------------------------------------------------------
-    // Store client
-    // --------------------------------------------------------
+		hash, err := bcrypt.GenerateFromPassword(
+			[]byte(clientSecret),
+			bcrypt.DefaultCost,
+		)
+		if err != nil {
+			return nil, err
+		}
 
-    err = s.repo.CreateClient(
-        clientID,
-        secretHash,
-        req.Name,
-        req.RedirectURI,
-        req.ClientType,
-        req.ClientLogo,
-        req.ClientURI,
-        req.PolicyURI,
-    )
-    if err != nil {
-        return nil, err
-    }
+		secretHash = string(hash)
+	}
 
-    // --------------------------------------------------------
-    // Response
-    // --------------------------------------------------------
+	// --------------------------------------------------------
+	// Store client
+	// --------------------------------------------------------
 
-    return &dto.RegisterClientResponse{
-        ClientID:     clientID,
-        ClientSecret: clientSecret,
-        Name:         req.Name,
-        RedirectURI:  req.RedirectURI,
-        ClientType:   req.ClientType,
-        ClientLogo:   req.ClientLogo,
-        ClientURI:    req.ClientURI,
-        PolicyURI:    req.PolicyURI,
-    }, nil
+	err = s.repo.CreateClient(
+		clientID,
+		userID,
+		secretHash,
+		req.Name,
+		req.RedirectURI,
+		req.ClientType,
+		req.ClientLogo,
+		req.ClientURI,
+		req.PolicyURI,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// --------------------------------------------------------
+	// Response
+	// --------------------------------------------------------
+
+	return &dto.RegisterClientResponse{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Name:         req.Name,
+		RedirectURI:  req.RedirectURI,
+		ClientType:   req.ClientType,
+		ClientLogo:   req.ClientLogo,
+		ClientURI:    req.ClientURI,
+		PolicyURI:    req.PolicyURI,
+	}, nil
 }
 
 // ============================================================
@@ -380,6 +396,46 @@ func (s *OIDCService) ValidateAuthorizationRequest(
 	}
 
 	return nil
+}
+
+func (s *OIDCService) ListAllByUser(
+	userID string,
+) ([]dto.OAuthClientResponse, error) {
+
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	clients, err := s.repo.ListAllByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		[]dto.OAuthClientResponse,
+		0,
+		len(clients),
+	)
+
+	for _, client := range clients {
+		result = append(
+			result,
+			dto.OAuthClientResponse{
+				ID:          client.ID,
+				ClientID:    client.ClientID,
+				ClientName:  client.ClientName,
+				RedirectURI: client.RedirectURI,
+				ClientType:  client.ClientType,
+				ClientLogo:  client.ClientLogo,
+				ClientURI:   client.ClientURI,
+				PolicyURI:   client.PolicyURI,
+				CreatedAt:   client.CreatedAt,
+				UpdatedAt:   client.UpdatedAt,
+			},
+		)
+	}
+
+	return result, nil
 }
 
 // ============================================================
@@ -1098,4 +1154,63 @@ func (s *OIDCService) GetClientInfo(clientID string) (*dto.ClientInfoResponse, e
     }
 
     return client, nil
+}
+// ============================================================
+// Delete Client By Internal ID
+// ============================================================
+
+func (s *OIDCService) DeleteClient(id string) error {
+    id = strings.TrimSpace(id)
+    if id == "" {
+        return errors.New("client id is required")
+    }
+
+    err := s.repo.DeleteByID(id)
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+
+// ============================================================
+// Rotate Client Secret By Internal ID
+// ============================================================
+
+func (s *OIDCService) RotateClientSecret(
+    id string,
+) (*dto.RotateSecretResponse, error) { // Or return string depending on your DTO setup
+
+    id = strings.TrimSpace(id)
+    if id == "" {
+        return nil, errors.New("client id is required")
+    }
+
+    // 1. Generate a brand new raw secret
+    newClientSecret, err := generateRandomString(48)
+    if err != nil {
+        return nil, err
+    }
+
+    // 2. Hash it using bcrypt
+    hash, err := bcrypt.GenerateFromPassword(
+        []byte(newClientSecret),
+        bcrypt.DefaultCost,
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    newSecretHash := string(hash)
+
+    // 3. Update the database using the internal ID
+    err = s.repo.RotateSecretByID(id, newSecretHash)
+    if err != nil {
+        return nil, err
+    }
+
+    // 4. Return the plaintext new secret (this is the only time it's shown)
+    return &dto.RotateSecretResponse{
+        ClientSecret: newClientSecret,
+    }, nil
 }
