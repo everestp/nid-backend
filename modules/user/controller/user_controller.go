@@ -4,6 +4,8 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+
 	"nid-backend/modules/user/service"
 	"nid-backend/pkg/middleware"
 )
@@ -16,6 +18,7 @@ func NewUserController(service *service.UserService) *UserController {
 	return &UserController{service: service}
 }
 
+// GetProfileHandler returns the private profile of the authenticated user
 func (c *UserController) GetProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -29,6 +32,33 @@ func (c *UserController) GetProfileHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	profile, err := c.service.GetProfile(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
+}
+
+// GetPublicProfileByHandleHandler returns the public profile for any handle
+// Route: GET /api/v1/profile/{handle}
+func (c *UserController) GetPublicProfileByHandleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	handle := strings.TrimSpace(r.PathValue("handle"))
+	handle = strings.TrimPrefix(handle, "@")
+	
+
+	if handle == "" {
+		http.Error(w, "handle is required", http.StatusBadRequest)
+		return
+	}
+
+	profile, err := c.service.GetPublicProfileByHandle(handle)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

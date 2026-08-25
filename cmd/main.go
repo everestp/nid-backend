@@ -59,9 +59,7 @@ func main() {
 	// ============================================================
 
 	if err := godotenv.Load(); err != nil {
-		log.Println(
-			"No .env file found, using system environment variables",
-		)
+		log.Println("No .env file found, using system environment variables")
 	}
 
 	cfg := config.LoadConfig()
@@ -72,12 +70,8 @@ func main() {
 
 	db, err := database.ConnectDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf(
-			"failed to connect to database: %v",
-			err,
-		)
+		log.Fatalf("failed to connect to database: %v", err)
 	}
-
 	defer db.Close()
 
 	log.Println("Database connected successfully")
@@ -87,27 +81,14 @@ func main() {
 	// ============================================================
 
 	authRepository := authRepo.NewAuthRepository(db)
-
 	handleRepository := handleRepo.NewHandleRepository(db)
-
 	walletRepository := walletRepo.NewWalletRepository(db)
-
 	resolutionRepository := resRepo.NewResolutionRepository(db)
-
 	sessionRepository := sesRepo.NewSessionRepository(db)
-
 	userRepository := userRepo.NewUserRepository(db)
-
 	oidcRepository := oidcRepo.NewOIDCRepository(db)
-
 	socialRepository := socialRepo.NewSocialRepository(db)
-
-	// ============================================================
-	// Wallet List Repository
-	// ============================================================
-
-	walletListRepository :=
-		walletListRepo.NewwalletListRepository(db)
+	walletListRepository := walletListRepo.NewwalletListRepository(db)
 
 	// ============================================================
 	// OIDC Signing Key
@@ -115,59 +96,21 @@ func main() {
 
 	oidcPrivateKey, err := helpers.LoadOIDCPrivateKey()
 	if err != nil {
-		log.Fatalf(
-			"failed to load OIDC private key: %v",
-			err,
-		)
+		log.Fatalf("failed to load OIDC private key: %v", err)
 	}
 
 	// ============================================================
 	// Services
 	// ============================================================
 
-	authService :=
-		authSvc.NewAuthService(
-			authRepository,
-		)
-
-	handleService :=
-		handleSvc.NewHandleService(
-			handleRepository,
-		)
-
-	walletService :=
-		walletSvc.NewWalletService(
-			walletRepository,
-		)
-
-	resolutionService :=
-		resSvc.NewResolutionService(
-			resolutionRepository,
-		)
-
-	sessionService :=
-		sesSvc.NewSessionService(
-			sessionRepository,
-		)
-
-	userService :=
-		userSvc.NewUserService(
-			userRepository,
-		)
-
-	socialService :=
-		socialSvc.NewSocialService(
-			socialRepository,
-		)
-
-	// ============================================================
-	// Wallet List Service
-	// ============================================================
-
-	walletListService :=
-		walletListSvc.NewwalletListService(
-			walletListRepository,
-		)
+	authService := authSvc.NewAuthService(authRepository)
+	handleService := handleSvc.NewHandleService(handleRepository)
+	walletService := walletSvc.NewWalletService(walletRepository)
+	resolutionService := resSvc.NewResolutionService(resolutionRepository)
+	sessionService := sesSvc.NewSessionService(sessionRepository)
+	userService := userSvc.NewUserService(userRepository)
+	socialService := socialSvc.NewSocialService(socialRepository)
+	walletListService := walletListSvc.NewwalletListService(walletListRepository)
 
 	// ============================================================
 	// OIDC Configuration
@@ -183,74 +126,26 @@ func main() {
 		"nid-2026-01",
 	)
 
-	oidcService :=
-		oidcSvc.NewOIDCService(
-			oidcRepository,
-			oidcPrivateKey,
-			oidcIssuer,
-			oidcKeyID,
-		)
+	oidcService := oidcSvc.NewOIDCService(
+		oidcRepository,
+		oidcPrivateKey,
+		oidcIssuer,
+		oidcKeyID,
+	)
 
 	// ============================================================
 	// Controllers
 	// ============================================================
 
-	authController :=
-		authCtrl.NewAuthController(
-			authService,
-		)
-
-	handleController :=
-		handleCtrl.NewHandleController(
-			handleService,
-		)
-
-	walletController :=
-		walletCtrl.NewWalletController(
-			walletService,
-		)
-
-	resolutionController :=
-		resCtrl.NewResolutionController(
-			resolutionService,
-		)
-
-	sessionController :=
-		sesCtrl.NewSessionController(
-			sessionService,
-		)
-
-	userController :=
-		userCtrl.NewUserController(
-			userService,
-		)
-
-	// ============================================================
-	// OIDC Controller
-	// ============================================================
-
-	oidcController :=
-		oidcCtrl.NewOIDCController(
-			oidcService,
-		)
-
-	// ============================================================
-	// Social Controller
-	// ============================================================
-
-	socialController :=
-		socialCtrl.NewSocialController(
-			socialService,
-		)
-
-	// ============================================================
-	// Wallet List Controller
-	// ============================================================
-
-	walletListController :=
-		walletListCtrl.NewwalletListtController(
-			walletListService,
-		)
+	authController := authCtrl.NewAuthController(authService)
+	handleController := handleCtrl.NewHandleController(handleService)
+	walletController := walletCtrl.NewWalletController(walletService)
+	resolutionController := resCtrl.NewResolutionController(resolutionService)
+	sessionController := sesCtrl.NewSessionController(sessionService)
+	userController := userCtrl.NewUserController(userService)
+	oidcController := oidcCtrl.NewOIDCController(oidcService)
+	socialController := socialCtrl.NewSocialController(socialService)
+	walletListController := walletListCtrl.NewwalletListtController(walletListService)
 
 	// ============================================================
 	// MAIN ROUTER
@@ -262,19 +157,13 @@ func main() {
 	// HEALTH
 	// ============================================================
 
-	mux.HandleFunc(
-		"GET /health",
-		healthHandler,
-	)
+	mux.HandleFunc("GET /health", healthHandler)
 
 	// ============================================================
 	// PUBLIC API
 	// ============================================================
 
-	// ============================================================
-	// In-House Authentication
-	// ============================================================
-
+	// Auth
 	mux.HandleFunc(
 		"POST /api/v1/auth/login",
 		authController.LoginHandler,
@@ -285,94 +174,70 @@ func main() {
 		authController.LogoutHandler,
 	)
 
-	// ============================================================
 	// Handle Resolution
-	// ============================================================
-
 	mux.HandleFunc(
 		"GET /api/v1/resolve",
 		resolutionController.ResolveHandler,
 	)
 
-	// ============================================================
 	// Claim Handle
-	// ============================================================
-
 	mux.HandleFunc(
 		"POST /api/v1/handles/claim",
 		handleController.ClaimHandler,
 	)
 
-	// ============================================================
-	// PUBLIC SOCIAL PROFILE
-	// ============================================================
-
+	// Public Social Profile
 	mux.HandleFunc(
 		"GET /api/v1/social/public",
 		socialController.PublicListHandler,
+	)
+
+	// Public User Profile
+	//
+	// Example:
+	// GET /api/v1/alice
+	// GET /api/v1/@alice
+	//
+	mux.HandleFunc(
+		"GET /api/v1/{handle}",
+		userController.GetPublicProfileByHandleHandler,
 	)
 
 	// ============================================================
 	// OAUTH 2.0 / OPENID CONNECT
 	// ============================================================
 
-	// ============================================================
-	// Authorization Endpoint
-	// ============================================================
+	// Public OIDC endpoints
 
 	mux.HandleFunc(
 		"GET /oauth/authorize",
 		oidcController.AuthorizeHandler,
 	)
 
-	// ============================================================
-	// Authorization Approval
-	// ============================================================
-
 	mux.HandleFunc(
 		"POST /oauth/authorize/approve",
 		oidcController.ApproveAuthorizationHandler,
 	)
-
-	// ============================================================
-	// Client Information
-	// ============================================================
 
 	mux.HandleFunc(
 		"GET /oauth/client-info",
 		oidcController.GetClientInfoHandler,
 	)
 
-	// ============================================================
-	// Token Endpoint
-	// ============================================================
-
 	mux.HandleFunc(
 		"POST /oauth/token",
 		oidcController.TokenHandler,
 	)
-
-	// ============================================================
-	// UserInfo Endpoint
-	// ============================================================
 
 	mux.HandleFunc(
 		"GET /oauth/userinfo",
 		oidcController.UserInfoHandler,
 	)
 
-	// ============================================================
-	// OIDC Discovery
-	// ============================================================
-
 	mux.HandleFunc(
 		"GET /.well-known/openid-configuration",
 		oidcController.DiscoveryHandler,
 	)
-
-	// ============================================================
-	// OIDC JWKS
-	// ============================================================
 
 	mux.HandleFunc(
 		"GET /.well-known/jwks.json",
@@ -386,7 +251,7 @@ func main() {
 	protectedMux := http.NewServeMux()
 
 	// ============================================================
-	// OAUTH
+	// OAuth Clients
 	// ============================================================
 
 	protectedMux.HandleFunc(
@@ -394,49 +259,44 @@ func main() {
 		oidcController.RegisterClientHandler,
 	)
 
-	// ============================================================
-	// WALLET LIST
-	// ============================================================
+	protectedMux.HandleFunc(
+		"GET /api/v1/oauth/clients",
+		oidcController.ListAllByUserHandler,
+	)
 
-	// Create wallet-list entry
-	//
-	// POST /api/v1/wallet-list
+	protectedMux.HandleFunc(
+		"DELETE /api/v1/oauth/clients/{id}",
+		oidcController.DeleteClientHandler,
+	)
+
+	protectedMux.HandleFunc(
+		"POST /api/v1/oauth/clients/{id}/rotate-secret",
+		oidcController.RotateClientSecretHandler,
+	)
+
+	// ============================================================
+	// Wallet List
+	// ============================================================
 
 	protectedMux.HandleFunc(
 		"POST /api/v1/wallet-list",
 		walletListController.Create,
 	)
 
-	// Get all wallet-list entries
-	//
-	// GET /api/v1/wallet-list
-
 	protectedMux.HandleFunc(
 		"GET /api/v1/wallet-list",
 		walletListController.GetAll,
 	)
-
-	// Get wallet-list entry by ID
-	//
-	// GET /api/v1/wallet-list/{id}
 
 	protectedMux.HandleFunc(
 		"GET /api/v1/wallet-list/{id}",
 		walletListController.GetByID,
 	)
 
-	// Update wallet-list entry
-	//
-	// PUT /api/v1/wallet-list/{id}
-
 	protectedMux.HandleFunc(
 		"PUT /api/v1/wallet-list/{id}",
 		walletListController.Update,
 	)
-
-	// Delete wallet-list entry
-	//
-	// DELETE /api/v1/wallet-list/{id}
 
 	protectedMux.HandleFunc(
 		"DELETE /api/v1/wallet-list/{id}",
@@ -444,7 +304,7 @@ func main() {
 	)
 
 	// ============================================================
-	// WALLET
+	// Wallet
 	// ============================================================
 
 	protectedMux.HandleFunc(
@@ -453,17 +313,13 @@ func main() {
 	)
 
 	// ============================================================
-	// SESSIONS
+	// Sessions
 	// ============================================================
-
-	// List all sessions
 
 	protectedMux.HandleFunc(
 		"GET /api/v1/sessions",
 		sessionController.ListHandler,
 	)
-
-	// Revoke one session
 
 	protectedMux.HandleFunc(
 		"POST /api/v1/sessions/revoke",
@@ -471,7 +327,7 @@ func main() {
 	)
 
 	// ============================================================
-	// USER
+	// User
 	// ============================================================
 
 	protectedMux.HandleFunc(
@@ -480,45 +336,33 @@ func main() {
 	)
 
 	// ============================================================
-	// SOCIAL
+	// Social
 	// ============================================================
-
-	// Get current user's social identities
 
 	protectedMux.HandleFunc(
 		"GET /api/v1/social",
 		socialController.ListHandler,
 	)
 
-	// Get one social identity
-
 	protectedMux.HandleFunc(
 		"GET /api/v1/social/{id}",
 		socialController.GetHandler,
 	)
-
-	// Add social identity
 
 	protectedMux.HandleFunc(
 		"POST /api/v1/social",
 		socialController.CreateHandler,
 	)
 
-	// Update social identity
-
 	protectedMux.HandleFunc(
 		"PUT /api/v1/social/{id}",
 		socialController.UpdateHandler,
 	)
 
-	// Toggle visibility
-
 	protectedMux.HandleFunc(
 		"PATCH /api/v1/social/{id}/visibility",
 		socialController.ToggleVisibilityHandler,
 	)
-
-	// Delete social identity
 
 	protectedMux.HandleFunc(
 		"DELETE /api/v1/social/{id}",
@@ -526,68 +370,35 @@ func main() {
 	)
 
 	// ============================================================
-	// OAUTH CLIENTS
-	// ============================================================
-
-	// List all OAuth clients
-
-	protectedMux.HandleFunc(
-		"GET /api/v1/oauth/clients",
-		oidcController.ListAllByUserHandler,
-	)
-
-	// Delete OAuth client
-
-	protectedMux.HandleFunc(
-		"DELETE /api/v1/oauth/clients/{id}",
-		oidcController.DeleteClientHandler,
-	)
-
-	// Rotate OAuth client secret
-
-	protectedMux.HandleFunc(
-		"POST /api/v1/oauth/clients/{id}/rotate-secret",
-		oidcController.RotateClientSecretHandler,
-	)
-
-	// ============================================================
 	// AUTHENTICATION MIDDLEWARE
 	// ============================================================
 
-	protectedHandler :=
-		middleware.AuthMiddleware(
-			protectedMux,
-		)
+	protectedHandler := middleware.AuthMiddleware(protectedMux)
 
 	// ============================================================
-	// MOUNT PROTECTED WALLET-LIST API
+	// MOUNT PROTECTED ROUTES
 	// ============================================================
-
-	mux.Handle(
-		"/api/v1/wallet-list",
-		protectedHandler,
-	)
+	//
+	// IMPORTANT:
+	// Only mount the "/" subtree.
+	// Do NOT separately register both:
+	//
+	// /api/v1/social
+	// /api/v1/social/
+	//
+	// because the Go ServeMux routing rules can make those
+	// registrations conflict with other patterns.
+	//
+	// The exact public routes above remain public because they
+	// are more specific patterns.
 
 	mux.Handle(
 		"/api/v1/wallet-list/",
 		protectedHandler,
 	)
 
-	// ============================================================
-	// MOUNT PROTECTED WALLET API
-	// ============================================================
-
 	mux.Handle(
 		"/api/v1/wallets/",
-		protectedHandler,
-	)
-
-	// ============================================================
-	// MOUNT PROTECTED SESSION API
-	// ============================================================
-
-	mux.Handle(
-		"/api/v1/sessions",
 		protectedHandler,
 	)
 
@@ -596,21 +407,8 @@ func main() {
 		protectedHandler,
 	)
 
-	// ============================================================
-	// MOUNT PROTECTED USER API
-	// ============================================================
-
 	mux.Handle(
 		"/api/v1/user/",
-		protectedHandler,
-	)
-
-	// ============================================================
-	// MOUNT PROTECTED SOCIAL API
-	// ============================================================
-
-	mux.Handle(
-		"/api/v1/social",
 		protectedHandler,
 	)
 
@@ -618,10 +416,6 @@ func main() {
 		"/api/v1/social/",
 		protectedHandler,
 	)
-
-	// ============================================================
-	// MOUNT PROTECTED OAUTH API
-	// ============================================================
 
 	mux.Handle(
 		"/api/v1/oauth/",
@@ -632,12 +426,9 @@ func main() {
 	// GLOBAL MIDDLEWARE
 	// ============================================================
 
-	handler :=
-		middleware.CORSMiddleware(
-			config.RequestLogger(
-				mux,
-			),
-		)
+	handler := middleware.CORSMiddleware(
+		config.RequestLogger(mux),
+	)
 
 	// ============================================================
 	// HTTP SERVER
@@ -650,17 +441,13 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr: ":" + port,
-
-		Handler: handler,
+		Addr:              ":" + port,
+		Handler:           handler,
 
 		ReadHeaderTimeout: 10 * time.Second,
-
-		ReadTimeout: 15 * time.Second,
-
-		WriteTimeout: 15 * time.Second,
-
-		IdleTimeout: 60 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// ============================================================
@@ -682,32 +469,12 @@ func main() {
 	)
 
 	log.Printf(
+		"Public Profile: http://localhost:%s/api/v1/{handle}",
+		port,
+	)
+
+	log.Printf(
 		"OIDC issuer: %s",
-		oidcIssuer,
-	)
-
-	log.Printf(
-		"OIDC authorize: %s/oauth/authorize",
-		oidcIssuer,
-	)
-
-	log.Printf(
-		"OIDC token: %s/oauth/token",
-		oidcIssuer,
-	)
-
-	log.Printf(
-		"OIDC userinfo: %s/oauth/userinfo",
-		oidcIssuer,
-	)
-
-	log.Printf(
-		"OIDC discovery: %s/.well-known/openid-configuration",
-		oidcIssuer,
-	)
-
-	log.Printf(
-		"OIDC JWKS: %s/.well-known/jwks.json",
 		oidcIssuer,
 	)
 
@@ -718,14 +485,8 @@ func main() {
 	// ============================================================
 
 	if err := server.ListenAndServe(); err != nil {
-		if !errors.Is(
-			err,
-			http.ErrServerClosed,
-		) {
-			log.Fatalf(
-				"server failed: %v",
-				err,
-			)
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed: %v", err)
 		}
 	}
 }
@@ -734,10 +495,7 @@ func main() {
 // HEALTH HANDLER
 // ============================================================
 
-func healthHandler(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
+func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(
 		"Content-Type",
 		"text/plain; charset=utf-8",
@@ -745,7 +503,5 @@ func healthHandler(
 
 	w.WriteHeader(http.StatusOK)
 
-	_, _ = w.Write(
-		[]byte("OK"),
-	)
+	_, _ = w.Write([]byte("OK"))
 }

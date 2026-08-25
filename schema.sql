@@ -46,33 +46,6 @@ CREATE INDEX IF NOT EXISTS idx_handles_handle
     ON handles(handle);
 
 
--- ============================================================================
--- 3. WALLETS
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS wallets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-    user_id UUID NOT NULL
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-    chain VARCHAR(32) NOT NULL,
-
-    network VARCHAR(32) NOT NULL,
-
-    address VARCHAR(255) NOT NULL UNIQUE,
-
-    status VARCHAR(32) NOT NULL DEFAULT 'verified',
-
-    linked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_wallets_user_id
-    ON wallets(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_wallets_address
-    ON wallets(address);
 
 
 -- ============================================================================
