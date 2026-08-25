@@ -4,7 +4,7 @@ import "net/http"
 
 var allowedOrigins = map[string]bool{
 	"http://localhost:5173": true, // NID frontend
-	"http://localhost:5374": true, // demo application
+	"http://localhost:5174": true, // Demo application
 }
 
 func CORSMiddleware(next http.Handler) http.Handler {
@@ -29,9 +29,10 @@ func CORSMiddleware(next http.Handler) http.Handler {
 			)
 		}
 
+		// Allow all methods your API uses.
 		w.Header().Set(
 			"Access-Control-Allow-Methods",
-			"GET, POST, PUT, DELETE, OPTIONS",
+			"GET, POST, PUT, PATCH, DELETE, OPTIONS",
 		)
 
 		w.Header().Set(
@@ -39,6 +40,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 			"Accept, Authorization, Content-Type, X-CSRF-Token",
 		)
 
+		// Handle browser CORS preflight.
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

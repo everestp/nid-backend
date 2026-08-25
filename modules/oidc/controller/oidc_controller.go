@@ -457,7 +457,7 @@ func (c *OIDCController) ApproveAuthorizationHandler(
     // Verify NID user
     // ========================================================
 
-    userID, err := helpers.GetUserIDFromRequest(r)
+    userID, err := helpers.GetInternalUserIDFromRequest(r)
     if err != nil {
         http.Error(
             w,

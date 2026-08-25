@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -17,11 +16,11 @@ import (
 const defaultSecret = "nid-secret-key"
 
 // ============================================================
-// JWT SECRET
+// INTERNAL NID SESSION AUTH
 // ============================================================
 
-func getJWTSecret() []byte {
-	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+func getInternalAuthSecret() []byte {
+	secret := strings.TrimSpace(os.Getenv("NID_INTERNAL_AUTH_SECRET"))
 
 	if secret == "" {
 		secret = defaultSecret
@@ -30,28 +29,43 @@ func getJWTSecret() []byte {
 	return []byte(secret)
 }
 
-// ============================================================
-// 1. EXISTING HMAC TOKEN
-// ============================================================
+// ------------------------------------------------------------
+// Generate Internal Session Token
+// ------------------------------------------------------------
+//
+// This token is ONLY for NID's own frontend/backend.
+//
+// Example:
+//
+// nid_token = userID.signature
+//
+// It is NOT an OIDC token.
+// It is NOT sent to external applications.
+//
 
-func GenerateToken(userID string) string {
+func GenerateInternalSessionToken(userID string) string {
 	userID = strings.TrimSpace(userID)
 
 	mac := hmac.New(
 		sha256.New,
-		getJWTSecret(),
+		getInternalAuthSecret(),
 	)
 
 	_, _ = mac.Write([]byte(userID))
 
-	return userID + "." + hex.EncodeToString(mac.Sum(nil))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	return userID + "." + signature
 }
 
-// ============================================================
-// 2. EXISTING HMAC TOKEN VALIDATION
-// ============================================================
+// ------------------------------------------------------------
+// Validate Internal Session Token
+// ------------------------------------------------------------
 
-func ValidateToken(token string) (string, bool) {
+func ValidateInternalSessionToken(
+	token string,
+) (string, bool) {
+
 	token = strings.TrimSpace(token)
 
 	parts := strings.Split(token, ".")
@@ -66,7 +80,7 @@ func ValidateToken(token string) (string, bool) {
 		return "", false
 	}
 
-	expected := GenerateToken(userID)
+	expected := GenerateInternalSessionToken(userID)
 
 	if !hmac.Equal(
 		[]byte(token),
@@ -78,11 +92,88 @@ func ValidateToken(token string) (string, bool) {
 	return userID, true
 }
 
+// ------------------------------------------------------------
+// Get NID Internal User From Cookie
+// ------------------------------------------------------------
+
+func GetInternalUserIDFromRequest(
+	r *http.Request,
+) (string, error) {
+
+	cookie, err := r.Cookie("nid_token")
+
+	if err != nil {
+		return "", errors.New(
+			"nid session cookie missing",
+		)
+	}
+
+	token := strings.TrimSpace(cookie.Value)
+
+	if token == "" {
+		return "", errors.New(
+			"nid session token is empty",
+		)
+	}
+
+	userID, valid := ValidateInternalSessionToken(token)
+
+	if !valid {
+		return "", errors.New(
+			"invalid nid session",
+		)
+	}
+
+	return userID, nil
+}
+
 // ============================================================
-// 3. OIDC ID TOKEN
+// OIDC AUTH
 // ============================================================
 
-func GenerateIDToken(
+// IMPORTANT:
+//
+// These functions are for EXTERNAL applications.
+//
+// Do NOT use the internal NID session token here.
+//
+// OIDC tokens should be signed with NID's OIDC signing key.
+//
+// Example:
+//
+// NID
+//   |
+//   ├── Authorization Code
+//   |
+//   ├── Access Token
+//   |
+//   └── ID Token
+//
+// External app consumes these tokens.
+//
+
+// ------------------------------------------------------------
+// OIDC ID Token Claims
+// ------------------------------------------------------------
+
+type OIDCClaims struct {
+	Handle string `json:"handle,omitempty"`
+
+	jwt.RegisteredClaims
+}
+
+// ------------------------------------------------------------
+// Generate OIDC ID Token
+// ------------------------------------------------------------
+//
+// NOTE:
+// This version uses HS256.
+//
+// For a real OIDC provider, I recommend RS256/ES256
+// with your OIDC private key and JWKS endpoint.
+//
+
+func GenerateOIDCIDToken(
 	userID string,
 	handle string,
 	clientID string,
@@ -93,22 +184,37 @@ func GenerateIDToken(
 	clientID = strings.TrimSpace(clientID)
 
 	if userID == "" {
-		return "", errors.New("user id is required")
+		return "", errors.New(
+			"user id is required",
+		)
 	}
 
 	if clientID == "" {
-		return "", errors.New("client id is required")
+		return "", errors.New(
+			"client id is required",
+		)
 	}
 
 	now := time.Now()
 
-	claims := jwt.MapClaims{
-		"iss":    "https://nid.xyz",
-		"sub":    userID,
-		"aud":    clientID,
-		"handle": handle,
-		"iat":    now.Unix(),
-		"exp":    now.Add(1 * time.Hour).Unix(),
+	claims := OIDCClaims{
+		Handle: handle,
+
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: "https://nid.xyz",
+
+			Subject: userID,
+
+			Audience: jwt.ClaimStrings{
+				clientID,
+			},
+
+			IssuedAt: jwt.NewNumericDate(now),
+
+			ExpiresAt: jwt.NewNumericDate(
+				now.Add(1 * time.Hour),
+			),
+		},
 	}
 
 	token := jwt.NewWithClaims(
@@ -116,65 +222,23 @@ func GenerateIDToken(
 		claims,
 	)
 
-	return token.SignedString(getJWTSecret())
+	return token.SignedString(
+		getInternalAuthSecret(),
+	)
 }
 
-// ============================================================
-// 4. GET USER ID FROM REQUEST
-// ============================================================
-
-func GetUserIDFromRequest(
-	r *http.Request,
-) (string, error) {
-
-	cookie, err := r.Cookie("nid_token")
-
-	if err != nil {
-		return "", errors.New(
-			"authentication token cookie missing",
-		)
-	}
-
-	token := strings.TrimSpace(cookie.Value)
-
-	if token == "" {
-		return "", errors.New(
-			"authentication token is empty",
-		)
-	}
-
-	userID, valid := ValidateToken(token)
-
-	if !valid {
-		return "", errors.New(
-			"invalid or expired session token",
-		)
-	}
-
-	return userID, nil
-}
-
-// ============================================================
-// 5. VALIDATE JWT TOKEN
-// ============================================================
+// ------------------------------------------------------------
+// Validate OIDC ID Token
+// ------------------------------------------------------------
 //
-// This is ONLY for JWT tokens.
+// This is for OIDC token validation.
+// External applications should normally validate
+// NID's ID token using NID's JWKS endpoint.
 //
-// Example:
-//
-// app_session=<JWT>
-//
-// It validates:
-//   - JWT format
-//   - HS256 algorithm
-//   - signature
-//   - expiration
-//   - subject
-//
-// ============================================================
 
-func ValidateJWTToken(
+func ValidateOIDCIDToken(
 	tokenString string,
+	clientID string,
 ) (string, bool) {
 
 	tokenString = strings.TrimSpace(tokenString)
@@ -183,57 +247,40 @@ func ValidateJWTToken(
 		return "", false
 	}
 
-	// ------------------------------------------------------------
-	// Parse JWT
-	// ------------------------------------------------------------
+	clientID = strings.TrimSpace(clientID)
 
-	token, err := jwt.Parse(
+	if clientID == "" {
+		return "", false
+	}
+
+	token, err := jwt.ParseWithClaims(
 		tokenString,
+		&OIDCClaims{},
 		func(token *jwt.Token) (interface{}, error) {
 
-			// Only allow HMAC algorithms.
-			// Specifically HS256 for your current implementation.
-
 			if token.Method != jwt.SigningMethodHS256 {
-				return nil, fmt.Errorf(
-					"unexpected signing method: %s",
-					token.Method.Alg(),
+				return nil, errors.New(
+					"unexpected oidc signing method",
 				)
 			}
 
-			return getJWTSecret(), nil
+			return getInternalAuthSecret(), nil
 		},
+		jwt.WithIssuer("https://nid.xyz"),
+		jwt.WithAudience(clientID),
 	)
 
-	if err != nil {
+	if err != nil || token == nil || !token.Valid {
 		return "", false
 	}
 
-	if token == nil || !token.Valid {
-		return "", false
-	}
-
-	// ------------------------------------------------------------
-	// Claims
-	// ------------------------------------------------------------
-
-	claims, ok := token.Claims.(jwt.MapClaims)
+	claims, ok := token.Claims.(*OIDCClaims)
 
 	if !ok {
 		return "", false
 	}
 
-	// ------------------------------------------------------------
-	// Subject
-	// ------------------------------------------------------------
-
-	sub, ok := claims["sub"].(string)
-
-	if !ok {
-		return "", false
-	}
-
-	sub = strings.TrimSpace(sub)
+	sub := strings.TrimSpace(claims.Subject)
 
 	if sub == "" {
 		return "", false
