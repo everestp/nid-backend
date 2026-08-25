@@ -292,6 +292,147 @@ CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_cleanup
     ON oauth_access_tokens(expires_at);
 
 
+    ALTER TABLE oauth_clients
+ADD COLUMN IF NOT EXISTS client_name VARCHAR(255) NOT NULL DEFAULT 'Unknown App',
+ADD COLUMN IF NOT EXISTS client_logo VARCHAR(512) DEFAULT '',
+ADD COLUMN IF NOT EXISTS client_uri VARCHAR(512) DEFAULT '',
+ADD COLUMN IF NOT EXISTS policy_uri VARCHAR(512) DEFAULT '';
+
+
+-- ============================================================================
+-- 4. SOCIAL IDENTITIES
+-- ============================================================================
+--
+-- External social / Web3 / developer identities linked to a NID user.
+--
+-- Examples:
+--   Twitter/X    -> @everest
+--   GitHub       -> everest
+--   Discord      -> everest
+--   Farcaster    -> @everest
+--   Telegram     -> everest
+--
+-- normalized_handle is used for case-insensitive / normalized lookups.
+--
+-- metadata can store provider-specific information such as:
+--   {
+--       "url": "https://x.com/everest",
+--       "provider_user_id": "123456789"
+--   }
+--
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS social_identities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    platform VARCHAR(32) NOT NULL,
+
+    handle VARCHAR(255) NOT NULL,
+
+    normalized_handle VARCHAR(255) NOT NULL,
+
+    verified BOOLEAN NOT NULL DEFAULT FALSE,
+
+    publicly_visible BOOLEAN NOT NULL DEFAULT FALSE,
+
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT social_identities_platform_check
+        CHECK (
+            platform IN (
+
+                -- Social
+                'twitter',
+                'instagram',
+                'facebook',
+                'tiktok',
+                'linkedin',
+                'threads',
+                'bluesky',
+                'mastodon',
+                'snapchat',
+                'pinterest',
+                'reddit',
+
+                -- Web3 / Crypto
+                'farcaster',
+                'lens',
+                'warpcast',
+                'mirror',
+                'zora',
+                'opensea',
+                'ens',
+
+                -- Developer
+                'github',
+                'gitlab',
+                'bitbucket',
+                'stackoverflow',
+                'codepen',
+
+                -- Messaging / Community
+                'discord',
+                'telegram',
+                'whatsapp',
+                'signal',
+                'twitch',
+
+                -- Content
+                'youtube',
+                'medium',
+                'substack',
+
+                -- Personal / Contact
+                'email',
+                'phone',
+                'website'
+            )
+        ),
+
+    CONSTRAINT social_identities_handle_check
+        CHECK (length(trim(handle)) > 0),
+
+    CONSTRAINT social_identities_normalized_handle_check
+        CHECK (length(trim(normalized_handle)) > 0),
+
+    CONSTRAINT social_identities_metadata_check
+        CHECK (jsonb_typeof(metadata) = 'object'),
+
+    CONSTRAINT social_identities_unique_identity
+        UNIQUE (user_id, platform, normalized_handle)
+);
+
+
+-- ============================================================================
+-- SOCIAL IDENTITY INDEXES
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_social_identities_user_id
+    ON social_identities(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_social_identities_platform_handle
+    ON social_identities(platform, normalized_handle);
+
+CREATE INDEX IF NOT EXISTS idx_social_identities_user_platform
+    ON social_identities(user_id, platform);
+
+CREATE INDEX IF NOT EXISTS idx_social_identities_public
+    ON social_identities(user_id, publicly_visible)
+    WHERE publicly_visible = TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_social_identities_verified
+    ON social_identities(user_id, verified)
+    WHERE verified = TRUE;
+
+
 -- ============================================================================
 -- END
 -- ============================================================================

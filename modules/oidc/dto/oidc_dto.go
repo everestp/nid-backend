@@ -4,10 +4,14 @@ package dto
 // OAuth / OIDC Client Registration
 // ============================================================
 
+
 type RegisterClientRequest struct {
 	Name        string `json:"name"`
 	RedirectURI string `json:"redirect_uri"`
 	ClientType  string `json:"client_type"`
+	ClientLogo  string `json:"client_logo"`
+	ClientURI   string `json:"client_uri"`
+	PolicyURI   string `json:"policy_uri"`
 }
 
 type RegisterClientResponse struct {
@@ -16,6 +20,9 @@ type RegisterClientResponse struct {
 	Name         string `json:"name"`
 	RedirectURI  string `json:"redirect_uri"`
 	ClientType   string `json:"client_type"`
+	ClientLogo   string `json:"client_logo"`
+	ClientURI    string `json:"client_uri"`
+	PolicyURI    string `json:"policy_uri"`
 }
 
 // ============================================================
@@ -155,4 +162,12 @@ type ErrorResponse struct {
 	ErrorDescription string `json:"error_description,omitempty"`
 	ErrorURI         string `json:"error_uri,omitempty"`
 	State            string `json:"state,omitempty"`
+}
+
+
+type ClientInfoResponse struct {
+	ClientName string `json:"client_name"`
+	ClientLogo string `json:"client_logo"`
+	ClientURI  string `json:"client_uri"`
+	PolicyURI  string `json:"policy_uri"`
 }

@@ -21,8 +21,8 @@ func LoadConfig() *Config {
 		port = "8080"
 	}
 	FrontendURL := os.Getenv("FRONTEND_URL")
-	if port == "" {
-		port = "http://localhost:5173"
+	if FrontendURL == "" {
+		FrontendURL = "http://localhost:5173"
 	}
 	return &Config{
 		DatabaseURL: dbURL,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"nid-backend/modules/oidc/dto"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -63,31 +64,40 @@ type AccessToken struct {
 // ============================================================
 
 func (r *OIDCRepository) CreateClient(
-	clientID string,
-	clientSecretHash string,
-	name string,
-	redirectURI string,
-	clientType string,
+    clientID string,
+    clientSecretHash string,
+    clientName string,
+    redirectURI string,
+    clientType string,
+    clientLogo string,
+    clientURI string,
+    policyURI string,
 ) error {
 
-	_, err := r.db.Exec(`
-		INSERT INTO oauth_clients (
-			client_id,
-			client_secret_hash,
-			name,
-			redirect_uri,
-			client_type
-		)
-		VALUES ($1, $2, $3, $4, $5)
-	`,
-		clientID,
-		clientSecretHash,
-		name,
-		redirectURI,
-		clientType,
-	)
+    _, err := r.db.Exec(`
+        INSERT INTO oauth_clients (
+            client_id,
+            client_secret_hash,
+            client_name,
+            redirect_uri,
+            client_type,
+            client_logo,
+            client_uri,
+            policy_uri
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `,
+        clientID,
+        clientSecretHash,
+        clientName,
+        redirectURI,
+        clientType,
+        clientLogo,
+        clientURI,
+        policyURI,
+    )
 
-	return err
+    return err
 }
 
 // ============================================================
@@ -621,4 +631,26 @@ func (r *OIDCRepository) GetPrimaryHandleByUserID(
 	}
 
 	return handle, nil
+}
+
+
+func (r *OIDCRepository) GetClientInfo(clientID string) (*dto.ClientInfoResponse, error) {
+    var client dto.ClientInfoResponse
+
+    err := r.db.QueryRow(`
+        SELECT client_name, client_logo, client_uri, policy_uri
+        FROM oauth_clients
+        WHERE client_id = $1
+    `, clientID).Scan(
+        &client.ClientName,
+        &client.ClientLogo,
+        &client.ClientURI,
+        &client.PolicyURI,
+    )
+
+    if err != nil {
+        return nil, err
+    }
+
+    return &client, nil
 }

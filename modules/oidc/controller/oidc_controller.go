@@ -1201,3 +1201,51 @@ func (c *OIDCController) JWKSHandler(
 		)
 	}
 }
+
+
+func (c *OIDCController) GetClientInfoHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		http.Error(
+			w,
+			"method not allowed",
+			http.StatusMethodNotAllowed,
+		)
+		return
+	}
+
+	clientID := r.URL.Query().Get("client_id")
+	if clientID == "" {
+		http.Error(
+			w,
+			"missing client_id parameter",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	clientInfo, err := c.service.GetClientInfo(clientID)
+	if err != nil {
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusNotFound,
+		)
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(clientInfo); err != nil {
+		log.Printf(
+			"failed encoding client info response: %v",
+			err,
+		)
+	}
+}

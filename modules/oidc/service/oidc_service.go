@@ -119,123 +119,133 @@ func verifyPKCE(
 // ============================================================
 
 func (s *OIDCService) RegisterClient(
-	req dto.RegisterClientRequest,
+    req dto.RegisterClientRequest,
 ) (*dto.RegisterClientResponse, error) {
 
-	// --------------------------------------------------------
-	// Normalize
-	// --------------------------------------------------------
+    // --------------------------------------------------------
+    // Normalize
+    // --------------------------------------------------------
 
-	req.Name = strings.TrimSpace(req.Name)
+    req.Name = strings.TrimSpace(req.Name)
 
-	req.RedirectURI = strings.TrimSpace(
-		req.RedirectURI,
-	)
+    req.RedirectURI = strings.TrimSpace(
+        req.RedirectURI,
+    )
 
-	req.ClientType = strings.ToLower(
-		strings.TrimSpace(req.ClientType),
-	)
+    req.ClientType = strings.ToLower(
+        strings.TrimSpace(req.ClientType),
+    )
 
-	// --------------------------------------------------------
-	// Validate name
-	// --------------------------------------------------------
+    req.ClientLogo = strings.TrimSpace(req.ClientLogo)
+    req.ClientURI = strings.TrimSpace(req.ClientURI)
+    req.PolicyURI = strings.TrimSpace(req.PolicyURI)
 
-	if req.Name == "" {
-		return nil, errors.New(
-			"client name is required",
-		)
-	}
+    // --------------------------------------------------------
+    // Validate name
+    // --------------------------------------------------------
 
-	// --------------------------------------------------------
-	// Validate redirect URI
-	// --------------------------------------------------------
+    if req.Name == "" {
+        return nil, errors.New(
+            "client name is required",
+        )
+    }
 
-	if req.RedirectURI == "" {
-		return nil, errors.New(
-			"redirect_uri is required",
-		)
-	}
+    // --------------------------------------------------------
+    // Validate redirect URI
+    // --------------------------------------------------------
 
-	// --------------------------------------------------------
-	// Default client type
-	// --------------------------------------------------------
+    if req.RedirectURI == "" {
+        return nil, errors.New(
+            "redirect_uri is required",
+        )
+    }
 
-	if req.ClientType == "" {
-		req.ClientType = "confidential"
-	}
+    // --------------------------------------------------------
+    // Default client type
+    // --------------------------------------------------------
 
-	// --------------------------------------------------------
-	// Validate client type
-	// --------------------------------------------------------
+    if req.ClientType == "" {
+        req.ClientType = "confidential"
+    }
 
-	if req.ClientType != "confidential" &&
-		req.ClientType != "public" {
+    // --------------------------------------------------------
+    // Validate client type
+    // --------------------------------------------------------
 
-		return nil, errors.New(
-			"invalid client_type",
-		)
-	}
+    if req.ClientType != "confidential" &&
+        req.ClientType != "public" {
 
-	// --------------------------------------------------------
-	// Generate client ID
-	// --------------------------------------------------------
+        return nil, errors.New(
+            "invalid client_type",
+        )
+    }
 
-	clientID, err := generateRandomString(24)
-	if err != nil {
-		return nil, err
-	}
+    // --------------------------------------------------------
+    // Generate client ID
+    // --------------------------------------------------------
 
-	// --------------------------------------------------------
-	// Client secret
-	// --------------------------------------------------------
+    clientID, err := generateRandomString(24)
+    if err != nil {
+        return nil, err
+    }
 
-	clientSecret := ""
-	secretHash := ""
+    // --------------------------------------------------------
+    // Client secret
+    // --------------------------------------------------------
 
-	if req.ClientType == "confidential" {
+    clientSecret := ""
+    secretHash := ""
 
-		clientSecret, err = generateRandomString(48)
-		if err != nil {
-			return nil, err
-		}
+    if req.ClientType == "confidential" {
 
-		hash, err := bcrypt.GenerateFromPassword(
-			[]byte(clientSecret),
-			bcrypt.DefaultCost,
-		)
-		if err != nil {
-			return nil, err
-		}
+        clientSecret, err = generateRandomString(48)
+        if err != nil {
+            return nil, err
+        }
 
-		secretHash = string(hash)
-	}
+        hash, err := bcrypt.GenerateFromPassword(
+            []byte(clientSecret),
+            bcrypt.DefaultCost,
+        )
+        if err != nil {
+            return nil, err
+        }
 
-	// --------------------------------------------------------
-	// Store client
-	// --------------------------------------------------------
+        secretHash = string(hash)
+    }
 
-	err = s.repo.CreateClient(
-		clientID,
-		secretHash,
-		req.Name,
-		req.RedirectURI,
-		req.ClientType,
-	)
-	if err != nil {
-		return nil, err
-	}
+    // --------------------------------------------------------
+    // Store client
+    // --------------------------------------------------------
 
-	// --------------------------------------------------------
-	// Response
-	// --------------------------------------------------------
+    err = s.repo.CreateClient(
+        clientID,
+        secretHash,
+        req.Name,
+        req.RedirectURI,
+        req.ClientType,
+        req.ClientLogo,
+        req.ClientURI,
+        req.PolicyURI,
+    )
+    if err != nil {
+        return nil, err
+    }
 
-	return &dto.RegisterClientResponse{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Name:         req.Name,
-		RedirectURI:  req.RedirectURI,
-		ClientType:   req.ClientType,
-	}, nil
+    // --------------------------------------------------------
+    // Response
+    // --------------------------------------------------------
+
+    return &dto.RegisterClientResponse{
+        ClientID:     clientID,
+        ClientSecret: clientSecret,
+        Name:         req.Name,
+        RedirectURI:  req.RedirectURI,
+        ClientType:   req.ClientType,
+        ClientLogo:   req.ClientLogo,
+        ClientURI:    req.ClientURI,
+        PolicyURI:    req.PolicyURI,
+    }, nil
 }
 
 // ============================================================
@@ -1077,4 +1087,19 @@ func (s *OIDCService) JWKS() (
 			},
 		},
 	}, nil
+}
+
+
+func (s *OIDCService) GetClientInfo(clientID string) (*dto.ClientInfoResponse, error) {
+    clientID = strings.TrimSpace(clientID)
+    if clientID == "" {
+        return nil, errors.New("client_id is required")
+    }
+
+    client, err := s.repo.GetClientInfo(clientID)
+    if err != nil {
+        return nil, errors.New("client not found")
+    }
+
+    return client, nil
 }
