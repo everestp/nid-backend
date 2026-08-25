@@ -441,286 +441,296 @@ func (c *OIDCController) AuthorizeHandler(
 // ============================================================
 
 func (c *OIDCController) ApproveAuthorizationHandler(
-	w http.ResponseWriter,
-	r *http.Request,
+    w http.ResponseWriter,
+    r *http.Request,
 ) {
-	if r.Method != http.MethodPost {
-		http.Error(
-			w,
-			"method not allowed",
-			http.StatusMethodNotAllowed,
-		)
-		return
-	}
+    if r.Method != http.MethodPost {
+        http.Error(
+            w,
+            "method not allowed",
+            http.StatusMethodNotAllowed,
+        )
+        return
+    }
 
-	// ========================================================
-	// Verify NID user
-	// ========================================================
+    // ========================================================
+    // Verify NID user
+    // ========================================================
 
-	userID, err := helpers.GetUserIDFromRequest(r)
-	if err != nil {
-		http.Error(
-			w,
-			"nid authentication required",
-			http.StatusUnauthorized,
-		)
-		return
-	}
+    userID, err := helpers.GetUserIDFromRequest(r)
+    if err != nil {
+        http.Error(
+            w,
+            "nid authentication required",
+            http.StatusUnauthorized,
+        )
+        return
+    }
 
-	// ========================================================
-	// Parse authorization request
-	// ========================================================
+    // ========================================================
+    // Parse authorization request
+    // ========================================================
 
-	var req dto.AuthorizationRequest
+    var req dto.AuthorizationRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(
-			w,
-			"invalid authorization request",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(
+            w,
+            "invalid authorization request",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Normalize
-	// ========================================================
+    // ========================================================
+    // Normalize
+    // ========================================================
 
-	req.ClientID = strings.TrimSpace(req.ClientID)
-	req.RedirectURI = strings.TrimSpace(req.RedirectURI)
-	req.ResponseType = strings.TrimSpace(req.ResponseType)
-	req.Scope = strings.TrimSpace(req.Scope)
-	req.CodeChallenge = strings.TrimSpace(req.CodeChallenge)
-	req.CodeChallengeMethod = strings.TrimSpace(
-		req.CodeChallengeMethod,
-	)
-	req.Nonce = strings.TrimSpace(req.Nonce)
+    req.ClientID = strings.TrimSpace(req.ClientID)
+    req.RedirectURI = strings.TrimSpace(req.RedirectURI)
+    req.ResponseType = strings.TrimSpace(req.ResponseType)
+    req.Scope = strings.TrimSpace(req.Scope)
+    req.CodeChallenge = strings.TrimSpace(req.CodeChallenge)
+    req.CodeChallengeMethod = strings.TrimSpace(
+        req.CodeChallengeMethod,
+    )
+    req.Nonce = strings.TrimSpace(req.Nonce)
 
-	// ========================================================
-	// Validate client_id
-	// ========================================================
+    // ========================================================
+    // Validate client_id
+    // ========================================================
 
-	if req.ClientID == "" {
-		http.Error(
-			w,
-			"missing client_id",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.ClientID == "" {
+        http.Error(
+            w,
+            "missing client_id",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate redirect_uri
-	// ========================================================
+    // ========================================================
+    // Validate redirect_uri
+    // ========================================================
 
-	if req.RedirectURI == "" {
-		http.Error(
-			w,
-			"missing redirect_uri",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.RedirectURI == "" {
+        http.Error(
+            w,
+            "missing redirect_uri",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate response_type
-	// ========================================================
+    // ========================================================
+    // Validate response_type
+    // ========================================================
 
-	if req.ResponseType == "" {
-		req.ResponseType = "code"
-	}
+    if req.ResponseType == "" {
+        req.ResponseType = "code"
+    }
 
-	if req.ResponseType != "code" {
-		http.Error(
-			w,
-			"response_type must be code",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.ResponseType != "code" {
+        http.Error(
+            w,
+            "response_type must be code",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Default scope
-	// ========================================================
+    // ========================================================
+    // Default scope
+    // ========================================================
 
-	if req.Scope == "" {
-		req.Scope = "openid"
-	}
+    if req.Scope == "" {
+        req.Scope = "openid"
+    }
 
-	// ========================================================
-	// Validate openid scope
-	// ========================================================
+    // ========================================================
+    // Validate openid scope
+    // ========================================================
 
-	hasOpenID := false
+    hasOpenID := false
 
-	for _, scope := range strings.Fields(req.Scope) {
-		if scope == "openid" {
-			hasOpenID = true
-			break
-		}
-	}
+    for _, scope := range strings.Fields(req.Scope) {
+        if scope == "openid" {
+            hasOpenID = true
+            break
+        }
+    }
 
-	if !hasOpenID {
-		http.Error(
-			w,
-			"openid scope is required",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if !hasOpenID {
+        http.Error(
+            w,
+            "openid scope is required",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate PKCE code_challenge
-	// ========================================================
+    // ========================================================
+    // Validate PKCE code_challenge
+    // ========================================================
 
-	if req.CodeChallenge == "" {
-		http.Error(
-			w,
-			"code_challenge is required",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.CodeChallenge == "" {
+        http.Error(
+            w,
+            "code_challenge is required",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate PKCE method
-	// ========================================================
+    // ========================================================
+    // Validate PKCE method
+    // ========================================================
 
-	if req.CodeChallengeMethod == "" {
-		req.CodeChallengeMethod = "S256"
-	}
+    if req.CodeChallengeMethod == "" {
+        req.CodeChallengeMethod = "S256"
+    }
 
-	if req.CodeChallengeMethod != "S256" {
-		http.Error(
-			w,
-			"code_challenge_method must be S256",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.CodeChallengeMethod != "S256" {
+        http.Error(
+            w,
+            "code_challenge_method must be S256",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate nonce
-	// ========================================================
+    // ========================================================
+    // Validate nonce
+    // ========================================================
 
-	// For OIDC authorization requests, nonce is recommended.
-	// If your clients must always use nonce, make this mandatory.
-	if req.Nonce == "" {
-		http.Error(
-			w,
-			"nonce is required",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if req.Nonce == "" {
+        http.Error(
+            w,
+            "nonce is required",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Validate client + redirect + OAuth parameters
-	// ========================================================
+    // ========================================================
+    // Validate client + redirect + OAuth parameters
+    // ========================================================
 
-	if err := c.service.ValidateAuthorizationRequest(
-		req.ClientID,
-		req.RedirectURI,
-		req.ResponseType,
-		req.Scope,
-		req.CodeChallenge,
-		req.CodeChallengeMethod,
-		req.Nonce,
-	); err != nil {
-		http.Error(
-			w,
-			"invalid authorization request",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    if err := c.service.ValidateAuthorizationRequest(
+        req.ClientID,
+        req.RedirectURI,
+        req.ResponseType,
+        req.Scope,
+        req.CodeChallenge,
+        req.CodeChallengeMethod,
+        req.Nonce,
+    ); err != nil {
+        http.Error(
+            w,
+            "invalid authorization request",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	// ========================================================
-	// Generate authorization code
-	// ========================================================
+    // ========================================================
+    // Generate authorization code
+    // ========================================================
 
-	code, err := c.service.GenerateAuthCode(
-		req.ClientID,
-		userID,
-		req.RedirectURI,
-		req.Scope,
-		req.Nonce,
-		req.CodeChallenge,
-		req.CodeChallengeMethod,
-	)
-	if err != nil {
-		log.Printf(
-			"failed generating authorization code: %v",
-			err,
-		)
+    code, err := c.service.GenerateAuthCode(
+        req.ClientID,
+        userID,
+        req.RedirectURI,
+        req.Scope,
+        req.Nonce,
+        req.CodeChallenge,
+        req.CodeChallengeMethod,
+    )
+    if err != nil {
+        log.Printf(
+            "failed generating authorization code: %v",
+            err,
+        )
 
-		http.Error(
-			w,
-			"failed to generate authorization code",
-			http.StatusInternalServerError,
-		)
-		return
-	}
+        http.Error(
+            w,
+            "failed to generate authorization code",
+            http.StatusInternalServerError,
+        )
+        return
+    }
 
-	// ========================================================
-	// Build callback URL
-	// ========================================================
+    // ========================================================
+    // Build callback URL
+    // ========================================================
 
-	callback, err := url.Parse(req.RedirectURI)
-	if err != nil {
-		http.Error(
-			w,
-			"invalid redirect URI",
-			http.StatusBadRequest,
-		)
-		return
-	}
+    callback, err := url.Parse(req.RedirectURI)
+    if err != nil {
+        http.Error(
+            w,
+            "invalid redirect URI",
+            http.StatusBadRequest,
+        )
+        return
+    }
 
-	params := callback.Query()
+    params := callback.Query()
 
-	// ========================================================
-	// Authorization code
-	// ========================================================
+    // ========================================================
+    // Authorization code
+    // ========================================================
 
-	params.Set(
-		"code",
-		code,
-	)
+    params.Set(
+        "code",
+        code,
+    )
 
-	// ========================================================
-	// OAuth state
-	// ========================================================
+    // ========================================================
+    // OAuth state
+    // ========================================================
 
-	if req.State != "" {
-		params.Set(
-			"state",
-			req.State,
-		)
-	}
+    if req.State != "" {
+        params.Set(
+            "state",
+            req.State,
+        )
+    }
 
-	callback.RawQuery = params.Encode()
+    callback.RawQuery = params.Encode()
 
-	// ========================================================
-	// Log approval
-	// ========================================================
+    // ========================================================
+    // Log approval
+    // ========================================================
 
-	log.Printf(
-		"OAuth authorization approved: client_id=%s user_id=%s redirect=%s",
-		req.ClientID,
-		userID,
-		req.RedirectURI,
-	)
+    log.Printf(
+        "OAuth authorization approved: client_id=%s user_id=%s redirect=%s",
+        req.ClientID,
+        userID,
+        req.RedirectURI,
+    )
 
-	// ========================================================
-	// Redirect to client
-	// ========================================================
+    // ========================================================
+    // Response Handling (JSON vs Redirect)
+    // ========================================================
 
-	http.Redirect(
-		w,
-		r,
-		callback.String(),
-		http.StatusFound,
-	)
+    redirectURL := callback.String()
+
+    if strings.Contains(r.Header.Get("Accept"), "application/json") {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        _ = json.NewEncoder(w).Encode(map[string]string{
+            "redirect_uri": redirectURL,
+        })
+        return
+    }
+
+    // Fallback standard redirect
+    http.Redirect(
+        w,
+        r,
+        redirectURL,
+        http.StatusFound,
+    )
 }
 // ============================================================
 // Authorization Denied

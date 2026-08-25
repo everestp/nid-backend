@@ -146,9 +146,13 @@ func main() {
 			userRepoInstance,
 		)
 
+	// ============================================================
+	// OIDC Configuration
+	// ============================================================
+
 	oidcIssuer := getEnv(
 		"NID_OIDC_ISSUER",
-		"https://nid.xyz",
+		"http://localhost:8081",
 	)
 
 	oidcKeyID := getEnv(
@@ -243,19 +247,16 @@ func main() {
 	// 2. Core Public API
 	// ============================================================
 
-	// Wallet login / NID login
 	mux.HandleFunc(
 		"/api/v1/auth/login",
 		authController.LoginHandler,
 	)
 
-	// Resolve .nid handle
 	mux.HandleFunc(
 		"/api/v1/resolve",
 		resolutionController.ResolveHandler,
 	)
 
-	// Claim .nid handle
 	mux.HandleFunc(
 		"/api/v1/handles/claim",
 		handleController.ClaimHandler,
@@ -267,11 +268,6 @@ func main() {
 
 	// ------------------------------------------------------------
 	// Client Registration
-	//
-	// POST /oauth/register
-	//
-	// IMPORTANT:
-	// Protect this endpoint in production.
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -284,19 +280,16 @@ func main() {
 	//
 	// GET /oauth/authorize
 	//
-	// Example:
+	// Client sends:
 	//
-	// https://nid.xyz/oauth/authorize?
-	// client_id=xxx
-	// &redirect_uri=https://client.xyz/callback
-	// &response_type=code
-	// &scope=openid%20profile
-	// &state=xxx
-	// &nonce=xxx
-	// &code_challenge=xxx
-	// &code_challenge_method=S256
-	//
-	// This endpoint is responsible for the NID authorization UI.
+	// client_id
+	// redirect_uri
+	// response_type
+	// scope
+	// state
+	// nonce
+	// code_challenge
+	// code_challenge_method
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -305,11 +298,23 @@ func main() {
 	)
 
 	// ------------------------------------------------------------
+	// Authorization Approval
+	//
+	// POST /oauth/authorize/approve
+	//
+	// IMPORTANT:
+	// Your NID authorization frontend calls this endpoint.
+	// ------------------------------------------------------------
+
+	mux.HandleFunc(
+		"/oauth/authorize/approve",
+		oidcController.ApproveAuthorizationHandler,
+	)
+
+	// ------------------------------------------------------------
 	// Token Endpoint
 	//
 	// POST /oauth/token
-	//
-	// Authorization Code + PKCE -> tokens
 	// ------------------------------------------------------------
 
 	mux.HandleFunc(
@@ -419,7 +424,7 @@ func main() {
 	port := cfg.Port
 
 	if strings.TrimSpace(port) == "" {
-		port = "8080"
+		port = "8081"
 	}
 
 	log.Printf(
@@ -438,7 +443,22 @@ func main() {
 	)
 
 	log.Printf(
+		"OIDC approval endpoint: %s/oauth/authorize/approve",
+		oidcIssuer,
+	)
+
+	log.Printf(
 		"OIDC token endpoint: %s/oauth/token",
+		oidcIssuer,
+	)
+
+	log.Printf(
+		"OIDC userinfo endpoint: %s/oauth/userinfo",
+		oidcIssuer,
+	)
+
+	log.Printf(
+		"OIDC discovery endpoint: %s/.well-known/openid-configuration",
 		oidcIssuer,
 	)
 
@@ -516,11 +536,7 @@ func loadOIDCPrivateKey() (*rsa.PrivateKey, error) {
 	)
 
 	// ------------------------------------------------------------
-	// If key doesn't exist, generate one for development.
-	//
-	// DO NOT use this behavior in production because restarting
-	// the server will generate a new signing key and old ID tokens
-	// will no longer validate.
+	// Development fallback
 	// ------------------------------------------------------------
 
 	if privateKeyPEM == "" {
@@ -575,6 +591,7 @@ func loadOIDCPrivateKey() (*rsa.PrivateKey, error) {
 	}
 
 	rsaKey, ok := key.(*rsa.PrivateKey)
+
 	if !ok {
 		return nil, os.ErrInvalid
 	}

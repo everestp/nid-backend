@@ -20,7 +20,7 @@ func LoadConfig() *Config {
 	if port == "" {
 		port = "8080"
 	}
-	FrontendURL := os.Getenv("PORT")
+	FrontendURL := os.Getenv("FRONTEND_URL")
 	if port == "" {
 		port = "http://localhost:5173"
 	}

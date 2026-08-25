@@ -62,21 +62,16 @@ func GenerateIDToken(userID, handle, clientID string) (string, error) {
 // 4. GetUserIDFromRequest extracts and validates the Bearer token from incoming HTTP requests
 // (Used by OIDC Authorize/Token controllers to recognize logged-in users safely)
 func GetUserIDFromRequest(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", errors.New("authorization header missing")
-	}
+    cookie, err := r.Cookie("nid_token")
+    if err != nil {
+        return "", errors.New("authentication token cookie missing")
+    }
 
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return "", errors.New("invalid authorization format, expected 'Bearer <token>'")
-	}
+    token := cookie.Value
+    userID, valid := ValidateToken(token)
+    if !valid {
+        return "", errors.New("invalid or expired session token")
+    }
 
-	token := parts[1]
-	userID, valid := ValidateToken(token)
-	if !valid {
-		return "", errors.New("invalid or expired session token")
-	}
-
-	return userID, nil
+    return userID, nil
 }
