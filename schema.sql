@@ -432,7 +432,31 @@ CREATE INDEX IF NOT EXISTS idx_social_identities_verified
     ON social_identities(user_id, verified)
     WHERE verified = TRUE;
 
+ALTER TABLE oauth_sessions
+ADD COLUMN IF NOT EXISTS client_id VARCHAR(128),
+  ADD COLUMN IF NOT EXISTS client_name VARCHAR(128),
+ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
+CREATE INDEX IF NOT EXISTS idx_oauth_sessions_client_id
+ON oauth_sessions(client_id);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_sessions_user_client
+ON oauth_sessions(user_id, client_id);
+
+
+
+
+
+
+ALTER TABLE oauth_access_tokens
+ADD COLUMN IF NOT EXISTS session_id UUID
+REFERENCES oauth_sessions(id)
+ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_session_id
+ON oauth_access_tokens(session_id);
 -- ============================================================================
 -- END
 -- ============================================================================
