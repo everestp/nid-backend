@@ -1,10 +1,12 @@
 package repository
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"nid-backend/models"
 	"nid-backend/modules/oidc/dto"
 	"time"
 
@@ -432,37 +434,36 @@ func (r *OIDCRepository) ConsumeAuthorizationCode(
 // ============================================================
 
 func (r *OIDCRepository) SaveAccessToken(
-	tokenHash string,
-	clientID string,
-	userID string,
-	scope string,
-	expiresAt time.Time,
+    tokenHash string,
+    sessionID string,
+    clientID string,
+    userID string,
+    scope string,
+    expiresAt time.Time,
 ) error {
 
-	_, err := r.db.Exec(`
-		INSERT INTO oauth_access_tokens (
-			token_hash,
-			client_id,
-			user_id,
-			scope,
-			expires_at
-		)
-		VALUES (
-			$1,
-			$2,
-			$3,
-			$4,
-			$5
-		)
-	`,
-		tokenHash,
-		clientID,
-		userID,
-		scope,
-		expiresAt,
-	)
+    _, err := r.db.ExecContext(
+        context.Background(),
+        `
+        INSERT INTO oauth_access_tokens (
+            token_hash,
+            session_id,
+            client_id,
+            user_id,
+            scope,
+            expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        tokenHash,
+        sessionID,
+        clientID,
+        userID,
+        scope,
+        expiresAt,
+    )
 
-	return err
+    return err
 }
 
 // ============================================================
@@ -476,32 +477,35 @@ func (r *OIDCRepository) SaveAccessToken(
 // ============================================================
 
 func (r *OIDCRepository) GetUserByAccessToken(
-	tokenHash string,
+    tokenHash string,
 ) (string, error) {
 
-	var userID string
+    var userID string
 
-	err := r.db.QueryRow(`
-		SELECT user_id
-		FROM oauth_access_tokens
-		WHERE token_hash = $1
-			AND revoked_at IS NULL
-			AND expires_at > CURRENT_TIMESTAMP
-	`,
-		tokenHash,
-	).Scan(&userID)
+    err := r.db.QueryRowContext(
+        context.Background(),
+        `
+        SELECT t.user_id
+        FROM oauth_access_tokens t
+        INNER JOIN oauth_sessions s
+            ON s.id = t.session_id
+        WHERE t.token_hash = $1
+          AND t.revoked_at IS NULL
+          AND t.expires_at > CURRENT_TIMESTAMP
+          AND s.status = 'active'
+          AND (
+              s.expires_at IS NULL
+              OR s.expires_at > CURRENT_TIMESTAMP
+          )
+        `,
+        tokenHash,
+    ).Scan(&userID)
 
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", errors.New(
-				"invalid access token",
-			)
-		}
+    if err != nil {
+        return "", err
+    }
 
-		return "", err
-	}
-
-	return userID, nil
+    return userID, nil
 }
 
 // ============================================================
@@ -653,4 +657,108 @@ func (r *OIDCRepository) GetClientInfo(clientID string) (*dto.ClientInfoResponse
     }
 
     return &client, nil
+}
+func (r *OIDCRepository) CreateOAuthSession(
+    userID string,
+    clientID string,
+    expiresAt time.Time,
+) (string, error) {
+
+    var sessionID string
+
+    err := r.db.QueryRowContext(
+        context.Background(),
+        `
+        INSERT INTO oauth_sessions (
+            user_id,
+            client_id,
+            status,
+            expires_at
+        )
+        VALUES ($1, $2, 'active', $3)
+        RETURNING id
+        `,
+        userID,
+        clientID,
+        expiresAt,
+    ).Scan(&sessionID)
+
+    if err != nil {
+        return "", err
+    }
+
+    return sessionID, nil
+}
+
+
+func (r *OIDCRepository) TouchSession(
+    tokenHash string,
+) error {
+
+    _, err := r.db.ExecContext(
+        context.Background(),
+        `
+        UPDATE oauth_sessions
+        SET last_used_at = CURRENT_TIMESTAMP
+        WHERE id = (
+            SELECT session_id
+            FROM oauth_access_tokens
+            WHERE token_hash = $1
+        )
+        `,
+        tokenHash,
+    )
+
+    return err
+}
+func (r *OIDCRepository) GetUserSessions(
+    userID string,
+) ([]models.OAuthSession, error) {
+
+    rows, err := r.db.QueryContext(
+        context.Background(),
+        `
+        SELECT
+            s.id,
+            s.user_id,
+            s.client_id,
+            s.status,
+            s.created_at,
+            s.expires_at,
+            s.last_used_at,
+            s.revoked_at
+        FROM oauth_sessions s
+        WHERE s.user_id = $1
+        ORDER BY s.created_at DESC
+        `,
+        userID,
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var sessions []models.OAuthSession
+
+    for rows.Next() {
+        var session models.OAuthSession
+
+        err := rows.Scan(
+            &session.ID,
+            &session.UserID,
+            &session.ClientID,
+            &session.Status,
+            &session.CreatedAt,
+            &session.ExpiresAt,
+            &session.LastUsedAt,
+            &session.RevokedAt,
+        )
+        if err != nil {
+            return nil, err
+        }
+
+        sessions = append(sessions, session)
+    }
+
+    return sessions, rows.Err()
 }

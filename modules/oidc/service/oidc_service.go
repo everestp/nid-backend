@@ -748,39 +748,35 @@ func (s *OIDCService) ExchangeCodeForToken(
 	// Generate access token
 	// --------------------------------------------------------
 
-	accessToken, err :=
-		generateRandomString(48)
+accessToken, err := generateRandomString(48)
+if err != nil {
+    return nil, err
+}
 
-	if err != nil {
-		return nil, err
-	}
+tokenHash := hashSHA256(accessToken)
 
-	// --------------------------------------------------------
-	// Hash access token
-	// --------------------------------------------------------
+accessTokenExpires := time.Now().Add(time.Hour)
 
-	tokenHash := hashSHA256(
-		accessToken,
-	)
+sessionID, err := s.repo.CreateOAuthSession(
+    authCode.UserID,
+    req.ClientID,
+    accessTokenExpires,
+)
+if err != nil {
+    return nil, err
+}
 
-	accessTokenExpires :=
-		time.Now().Add(time.Hour)
-
-	// --------------------------------------------------------
-	// Store access token
-	// --------------------------------------------------------
-
-	err = s.repo.SaveAccessToken(
-		tokenHash,
-		req.ClientID,
-		authCode.UserID,
-		authCode.Scope,
-		accessTokenExpires,
-	)
-
-	if err != nil {
-		return nil, err
-	}
+err = s.repo.SaveAccessToken(
+    tokenHash,
+    sessionID,
+    req.ClientID,
+    authCode.UserID,
+    authCode.Scope,
+    accessTokenExpires,
+)
+if err != nil {
+    return nil, err
+}
 
 	// --------------------------------------------------------
 	// Get user's NID handle

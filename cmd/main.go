@@ -226,13 +226,13 @@ func main() {
 		)
 
 	// ============================================================
-	// Main Router
+	// MAIN ROUTER
 	// ============================================================
 
 	mux := http.NewServeMux()
 
 	// ============================================================
-	// Health
+	// HEALTH
 	// ============================================================
 
 	mux.HandleFunc(
@@ -248,13 +248,11 @@ func main() {
 	// In-House Authentication
 	// ============================================================
 
-	// Wallet signature -> internal NID session.
 	mux.HandleFunc(
 		"POST /api/v1/auth/login",
 		authController.LoginHandler,
 	)
 
-	// Destroy internal session.
 	mux.HandleFunc(
 		"POST /api/v1/auth/logout",
 		authController.LogoutHandler,
@@ -281,12 +279,6 @@ func main() {
 	// ============================================================
 	// PUBLIC SOCIAL PROFILE
 	// ============================================================
-
-	// Example:
-	//
-	// GET /api/v1/social/public?user_id=<uuid>
-	//
-	// This endpoint does NOT require authentication.
 
 	mux.HandleFunc(
 		"GET /api/v1/social/public",
@@ -385,9 +377,22 @@ func main() {
 	)
 
 	// ============================================================
-	// Session
+	// Sessions
 	// ============================================================
 
+	// List all sessions for current user
+	//
+	// GET /api/v1/sessions
+	//
+	protectedMux.HandleFunc(
+		"GET /api/v1/sessions",
+		sessionController.ListHandler,
+	)
+
+	// Revoke one session
+	//
+	// POST /api/v1/sessions/revoke?id=<session-id>
+	//
 	protectedMux.HandleFunc(
 		"POST /api/v1/sessions/revoke",
 		sessionController.RevokeHandler,
@@ -406,37 +411,37 @@ func main() {
 	// Social
 	// ============================================================
 
-	// Get current user's socials.
+	// Get current user's social identities
 	protectedMux.HandleFunc(
 		"GET /api/v1/social",
 		socialController.ListHandler,
 	)
 
-	// Get a single social identity.
+	// Get one social identity
 	protectedMux.HandleFunc(
 		"GET /api/v1/social/{id}",
 		socialController.GetHandler,
 	)
 
-	// Add social identity.
+	// Add social identity
 	protectedMux.HandleFunc(
 		"POST /api/v1/social",
 		socialController.CreateHandler,
 	)
 
-	// Update social identity.
+	// Update social identity
 	protectedMux.HandleFunc(
 		"PUT /api/v1/social/{id}",
 		socialController.UpdateHandler,
 	)
 
-	// Toggle visibility.
+	// Toggle visibility
 	protectedMux.HandleFunc(
 		"PATCH /api/v1/social/{id}/visibility",
 		socialController.ToggleVisibilityHandler,
 	)
 
-	// Delete social identity.
+	// Delete social identity
 	protectedMux.HandleFunc(
 		"DELETE /api/v1/social/{id}",
 		socialController.DeleteHandler,
@@ -465,6 +470,11 @@ func main() {
 	// ============================================================
 
 	mux.Handle(
+		"/api/v1/sessions",
+		protectedHandler,
+	)
+
+	mux.Handle(
 		"/api/v1/sessions/",
 		protectedHandler,
 	)
@@ -482,13 +492,11 @@ func main() {
 	// Mount Protected Social API
 	// ============================================================
 
-	// /api/v1/social
 	mux.Handle(
 		"/api/v1/social",
 		protectedHandler,
 	)
 
-	// /api/v1/social/{id}
 	mux.Handle(
 		"/api/v1/social/",
 		protectedHandler,
@@ -530,7 +538,7 @@ func main() {
 	}
 
 	// ============================================================
-	// Startup Logs
+	// STARTUP LOGS
 	// ============================================================
 
 	log.Println("==============================================")
@@ -584,7 +592,6 @@ func main() {
 	// ============================================================
 
 	if err := server.ListenAndServe(); err != nil {
-
 		if !errors.Is(
 			err,
 			http.ErrServerClosed,
@@ -598,7 +605,7 @@ func main() {
 }
 
 // ============================================================
-// Health Handler
+// HEALTH HANDLER
 // ============================================================
 
 func healthHandler(

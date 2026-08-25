@@ -457,6 +457,14 @@ ON DELETE CASCADE;
 
 CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_session_id
 ON oauth_access_tokens(session_id);
+
+UPDATE oauth_sessions
+SET last_used_at = CURRENT_TIMESTAMP
+WHERE id = (
+    SELECT session_id
+    FROM oauth_access_tokens
+    WHERE token_hash = $1
+);
 -- ============================================================================
 -- END
 -- ============================================================================

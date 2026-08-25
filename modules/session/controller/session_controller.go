@@ -42,7 +42,51 @@ func (c *SessionController) RevokeHandler(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(dto.SessionResponse{
-		Status:  "success",
+		Success:  true,
 		Message: "session revoked successfully",
 	})
+}
+func (c *SessionController) ListHandler(
+    w http.ResponseWriter,
+    r *http.Request,
+) {
+
+    userID, ok :=
+        r.Context().Value(
+            middleware.UserIDKey,
+        ).(string)
+
+    if !ok || userID == "" {
+        http.Error(
+            w,
+            "Unauthorized",
+            http.StatusUnauthorized,
+        )
+        return
+    }
+
+    sessions, err :=
+        c.service.List(userID)
+
+    if err != nil {
+        http.Error(
+            w,
+            err.Error(),
+            http.StatusInternalServerError,
+        )
+        return
+    }
+
+    w.Header().Set(
+        "Content-Type",
+        "application/json",
+    )
+
+    json.NewEncoder(w).Encode(
+        map[string]interface{}{
+            "success":  true,
+            "sessions": sessions,
+            "count":    len(sessions),
+        },
+    )
 }
