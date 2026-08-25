@@ -3,6 +3,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"nid-backend/modules/session/dto"
 	"nid-backend/modules/session/service"
@@ -67,6 +68,7 @@ func (c *SessionController) ListHandler(
 
     sessions, err :=
         c.service.List(userID)
+        fmt.Println("Tjis is the session data and  err",sessions,err)
 
     if err != nil {
         http.Error(

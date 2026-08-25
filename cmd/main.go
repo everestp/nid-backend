@@ -194,7 +194,6 @@ func main() {
 
 	// Public User Profile
 	//
-	// Example:
 	// GET /api/v1/alice
 	// GET /api/v1/@alice
 	//
@@ -204,10 +203,8 @@ func main() {
 	)
 
 	// ============================================================
-	// OAUTH 2.0 / OPENID CONNECT
+	// PUBLIC OAUTH / OPENID CONNECT
 	// ============================================================
-
-	// Public OIDC endpoints
 
 	mux.HandleFunc(
 		"GET /oauth/authorize",
@@ -245,181 +242,138 @@ func main() {
 	)
 
 	// ============================================================
-	// PROTECTED ROUTER
+	// PROTECTED ROUTE HELPER
+	// ============================================================
+	//
+	// Every protected endpoint goes through AuthMiddleware.
+	//
+	// This avoids mounting multiple overlapping prefixes on the
+	// main ServeMux.
+	//
+
+	protected := func(handler http.HandlerFunc) http.HandlerFunc {
+		return middleware.AuthMiddleware(
+			http.HandlerFunc(handler),
+		).ServeHTTP
+	}
+
+	// ============================================================
+	// PROTECTED - OAUTH CLIENTS
 	// ============================================================
 
-	protectedMux := http.NewServeMux()
-
-	// ============================================================
-	// OAuth Clients
-	// ============================================================
-
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/oauth/register",
-		oidcController.RegisterClientHandler,
+		protected(oidcController.RegisterClientHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/oauth/clients",
-		oidcController.ListAllByUserHandler,
+		protected(oidcController.ListAllByUserHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"DELETE /api/v1/oauth/clients/{id}",
-		oidcController.DeleteClientHandler,
+		protected(oidcController.DeleteClientHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/oauth/clients/{id}/rotate-secret",
-		oidcController.RotateClientSecretHandler,
+		protected(oidcController.RotateClientSecretHandler),
 	)
 
 	// ============================================================
-	// Wallet List
+	// PROTECTED - WALLET LIST
 	// ============================================================
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/wallet-list",
-		walletListController.Create,
+		protected(walletListController.Create),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/wallet-list",
-		walletListController.GetAll,
+		protected(walletListController.GetAll),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/wallet-list/{id}",
-		walletListController.GetByID,
+		protected(walletListController.GetByID),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"PUT /api/v1/wallet-list/{id}",
-		walletListController.Update,
+		protected(walletListController.Update),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"DELETE /api/v1/wallet-list/{id}",
-		walletListController.Delete,
+		protected(walletListController.Delete),
 	)
 
 	// ============================================================
-	// Wallet
+	// PROTECTED - WALLET
 	// ============================================================
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/wallets/link",
-		walletController.LinkWalletHandler,
+		protected(walletController.LinkWalletHandler),
 	)
 
 	// ============================================================
-	// Sessions
+	// PROTECTED - SESSIONS
 	// ============================================================
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/sessions",
-		sessionController.ListHandler,
+		protected(sessionController.ListHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/sessions/revoke",
-		sessionController.RevokeHandler,
+		protected(sessionController.RevokeHandler),
 	)
 
 	// ============================================================
-	// User
+	// PROTECTED - USER
 	// ============================================================
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/user/profile",
-		userController.GetProfileHandler,
+		protected(userController.GetProfileHandler),
 	)
 
 	// ============================================================
-	// Social
+	// PROTECTED - SOCIAL
 	// ============================================================
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/social",
-		socialController.ListHandler,
+		protected(socialController.ListHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"GET /api/v1/social/{id}",
-		socialController.GetHandler,
+		protected(socialController.GetHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"POST /api/v1/social",
-		socialController.CreateHandler,
+		protected(socialController.CreateHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"PUT /api/v1/social/{id}",
-		socialController.UpdateHandler,
+		protected(socialController.UpdateHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"PATCH /api/v1/social/{id}/visibility",
-		socialController.ToggleVisibilityHandler,
+		protected(socialController.ToggleVisibilityHandler),
 	)
 
-	protectedMux.HandleFunc(
+	mux.HandleFunc(
 		"DELETE /api/v1/social/{id}",
-		socialController.DeleteHandler,
-	)
-
-	// ============================================================
-	// AUTHENTICATION MIDDLEWARE
-	// ============================================================
-
-	protectedHandler := middleware.AuthMiddleware(protectedMux)
-
-	// ============================================================
-	// MOUNT PROTECTED ROUTES
-	// ============================================================
-	//
-	// IMPORTANT:
-	// Only mount the "/" subtree.
-	// Do NOT separately register both:
-	//
-	// /api/v1/social
-	// /api/v1/social/
-	//
-	// because the Go ServeMux routing rules can make those
-	// registrations conflict with other patterns.
-	//
-	// The exact public routes above remain public because they
-	// are more specific patterns.
-
-	mux.Handle(
-		"/api/v1/wallet-list/",
-		protectedHandler,
-	)
-
-	mux.Handle(
-		"/api/v1/wallets/",
-		protectedHandler,
-	)
-
-	mux.Handle(
-		"/api/v1/sessions/",
-		protectedHandler,
-	)
-
-	mux.Handle(
-		"/api/v1/user/",
-		protectedHandler,
-	)
-
-	mux.Handle(
-		"/api/v1/social/",
-		protectedHandler,
-	)
-
-	mux.Handle(
-		"/api/v1/oauth/",
-		protectedHandler,
+		protected(socialController.DeleteHandler),
 	)
 
 	// ============================================================

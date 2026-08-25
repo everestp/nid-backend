@@ -3,6 +3,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -51,7 +52,7 @@ func (c *UserController) GetPublicProfileByHandleHandler(w http.ResponseWriter, 
 
 	handle := strings.TrimSpace(r.PathValue("handle"))
 	handle = strings.TrimPrefix(handle, "@")
-	
+	fmt.Println("Tjios is clesn handfle",handle)
 
 	if handle == "" {
 		http.Error(w, "handle is required", http.StatusBadRequest)

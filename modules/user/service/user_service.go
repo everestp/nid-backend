@@ -3,8 +3,9 @@ package service
 
 import (
 	"errors"
-	"nid-backend/modules/user/repository"
+	"fmt"
 	"nid-backend/modules/user/dto"
+	"nid-backend/modules/user/repository"
 )
 
 type UserService struct {
@@ -50,6 +51,7 @@ func (s *UserService) GetProfile(userID string) (*dto.UserProfileResponse, error
 
 func (s *UserService) GetPublicProfileByHandle(handle string) (*dto.PublicProfileResponse, error) {
 	profile, err := s.repo.GetPublicProfileByHandle(handle)
+	fmt.Println("Thi is the profile",profile , err)
 	if err != nil {
 		return nil, errors.New("profile not found")
 	}
