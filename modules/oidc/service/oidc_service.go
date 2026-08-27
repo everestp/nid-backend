@@ -633,247 +633,158 @@ func (s *OIDCService) GenerateAuthCode(
 // ============================================================
 
 func (s *OIDCService) ExchangeCodeForToken(
-	req dto.TokenRequest,
+    req dto.TokenRequest,
 ) (*dto.TokenResponse, error) {
 
-	// --------------------------------------------------------
-	// grant_type
-	// --------------------------------------------------------
+    // ========================================================
+    // 1. Validate request parameters
+    // ========================================================
 
-	req.GrantType = strings.TrimSpace(
-		req.GrantType,
-	)
+    req.GrantType = strings.TrimSpace(req.GrantType)
+    if req.GrantType != "authorization_code" {
+        return nil, errors.New("unsupported grant_type")
+    }
 
-	if req.GrantType != "authorization_code" {
-		return nil, errors.New(
-			"unsupported grant_type",
-		)
-	}
+    req.ClientID = strings.TrimSpace(req.ClientID)
+    if req.ClientID == "" {
+        return nil, errors.New("client_id is required")
+    }
 
-	// --------------------------------------------------------
-	// client_id
-	// --------------------------------------------------------
+    req.Code = strings.TrimSpace(req.Code)
+    if req.Code == "" {
+        return nil, errors.New("code is required")
+    }
 
-	req.ClientID = strings.TrimSpace(
-		req.ClientID,
-	)
+    req.RedirectURI = strings.TrimSpace(req.RedirectURI)
+    if req.RedirectURI == "" {
+        return nil, errors.New("redirect_uri is required")
+    }
 
-	if req.ClientID == "" {
-		return nil, errors.New(
-			"client_id is required",
-		)
-	}
+    req.CodeVerifier = strings.TrimSpace(req.CodeVerifier)
+    if req.CodeVerifier == "" {
+        return nil, errors.New("code_verifier is required")
+    }
 
-	// --------------------------------------------------------
-	// code
-	// --------------------------------------------------------
+    // ========================================================
+    // 2. Get and validate client
+    // ========================================================
 
-	req.Code = strings.TrimSpace(
-		req.Code,
-	)
+    client, err := s.repo.GetClient(req.ClientID)
+    if err != nil {
+        return nil, errors.New("invalid client")
+    }
 
-	if req.Code == "" {
-		return nil, errors.New(
-			"code is required",
-		)
-	}
+    if client.RedirectURI != req.RedirectURI {
+        return nil, errors.New("redirect_uri mismatch")
+    }
 
-	// --------------------------------------------------------
-	// redirect_uri
-	// --------------------------------------------------------
+    // Handle confidential client secret verification if applicable
+    if client.ClientType == "confidential" {
+        req.ClientSecret = strings.TrimSpace(req.ClientSecret)
+        if req.ClientSecret == "" {
+            return nil, errors.New("client_secret is required")
+        }
 
-	req.RedirectURI = strings.TrimSpace(
-		req.RedirectURI,
-	)
+        if err := bcrypt.CompareHashAndPassword(
+            []byte(client.ClientSecretHash),
+            []byte(req.ClientSecret),
+        ); err != nil {
+            return nil, errors.New("invalid client credentials")
+        }
+    }
 
-	if req.RedirectURI == "" {
-		return nil, errors.New(
-			"redirect_uri is required",
-		)
-	}
+    // ========================================================
+    // 3. Consume authorization code
+    // ========================================================
 
-	// --------------------------------------------------------
-	// code_verifier
-	// --------------------------------------------------------
+    authCode, err := s.repo.ConsumeAuthorizationCode(
+        req.Code,
+        req.ClientID,
+        req.RedirectURI,
+    )
+    if err != nil {
+        return nil, err
+    }
 
-	req.CodeVerifier = strings.TrimSpace(
-		req.CodeVerifier,
-	)
+    // ========================================================
+    // 4. Verify PKCE
+    // ========================================================
 
-	if req.CodeVerifier == "" {
-		return nil, errors.New(
-			"code_verifier is required",
-		)
-	}
+    if authCode.CodeChallengeMethod != "S256" {
+        return nil, errors.New("unsupported code_challenge_method")
+    }
 
-	// --------------------------------------------------------
-	// Get client
-	// --------------------------------------------------------
+    if !verifyPKCE(
+        req.CodeVerifier,
+        authCode.CodeChallenge,
+        authCode.CodeChallengeMethod,
+    ) {
+        return nil, errors.New("invalid code_verifier")
+    }
 
-	client, err := s.repo.GetClient(
-		req.ClientID,
-	)
-	if err != nil {
-		return nil, errors.New(
-			"invalid client",
-		)
-	}
+    // ========================================================
+    // 5. Generate Access Token
+    // ========================================================
 
-	// --------------------------------------------------------
-	// Validate redirect URI
-	// --------------------------------------------------------
+    accessToken, err := generateRandomString(48)
+    if err != nil {
+        return nil, err
+    }
 
-	if client.RedirectURI != req.RedirectURI {
-		return nil, errors.New(
-			"redirect_uri mismatch",
-		)
-	}
+    tokenHash := hashSHA256(accessToken)
+    accessTokenExpires := time.Now().Add(time.Hour)
 
-	// --------------------------------------------------------
-	// Confidential client authentication
-	// --------------------------------------------------------
+    sessionID, err := s.repo.CreateOAuthSession(
+        authCode.UserID,
+        req.ClientID,
+        accessTokenExpires,
+    )
+    if err != nil {
+        return nil, err
+    }
 
-	if client.ClientType == "confidential" {
+    err = s.repo.SaveAccessToken(
+        tokenHash,
+        sessionID,
+        req.ClientID,
+        authCode.UserID,
+        authCode.Scope,
+        accessTokenExpires,
+    )
+    if err != nil {
+        return nil, err
+    }
 
-		req.ClientSecret = strings.TrimSpace(
-			req.ClientSecret,
-		)
+    // ========================================================
+    // 6. Get user handle and generate ID Token (OIDC)
+    // ========================================================
 
-		if req.ClientSecret == "" {
-			return nil, errors.New(
-				"client_secret is required",
-			)
-		}
+    handle, err := s.repo.GetPrimaryHandleByUserID(authCode.UserID)
+    if err != nil {
+        return nil, err
+    }
 
-		if client.ClientSecretHash == "" {
-			return nil, errors.New(
-				"client secret not configured",
-			)
-		}
+    idToken, err := s.GenerateIDToken(
+        authCode.UserID,
+        handle,
+        req.ClientID,
+        authCode.Nonce,
+    )
+    if err != nil {
+        return nil, err
+    }
 
-		if err := bcrypt.CompareHashAndPassword(
-			[]byte(client.ClientSecretHash),
-			[]byte(req.ClientSecret),
-		); err != nil {
-			return nil, errors.New(
-				"invalid client credentials",
-			)
-		}
-	}
+    // ========================================================
+    // 7. Return Token Response JSON
+    // ========================================================
 
-	// --------------------------------------------------------
-	// Consume authorization code
-	// --------------------------------------------------------
-
-	authCode, err :=
-		s.repo.ConsumeAuthorizationCode(
-			req.Code,
-			req.ClientID,
-			req.RedirectURI,
-		)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// --------------------------------------------------------
-	// Validate PKCE method
-	// --------------------------------------------------------
-
-	if authCode.CodeChallengeMethod != "S256" {
-		return nil, errors.New(
-			"unsupported code_challenge_method",
-		)
-	}
-
-	// --------------------------------------------------------
-	// Verify PKCE
-	// --------------------------------------------------------
-
-	if !verifyPKCE(
-		req.CodeVerifier,
-		authCode.CodeChallenge,
-		authCode.CodeChallengeMethod,
-	) {
-		return nil, errors.New(
-			"invalid code_verifier",
-		)
-	}
-
-	// --------------------------------------------------------
-	// Generate access token
-	// --------------------------------------------------------
-
-accessToken, err := generateRandomString(48)
-if err != nil {
-    return nil, err
-}
-
-tokenHash := hashSHA256(accessToken)
-
-accessTokenExpires := time.Now().Add(time.Hour)
-
-sessionID, err := s.repo.CreateOAuthSession(
-    authCode.UserID,
-    req.ClientID,
-    accessTokenExpires,
-)
-if err != nil {
-    return nil, err
-}
-
-err = s.repo.SaveAccessToken(
-    tokenHash,
-    sessionID,
-    req.ClientID,
-    authCode.UserID,
-    authCode.Scope,
-    accessTokenExpires,
-)
-if err != nil {
-    return nil, err
-}
-
-	// --------------------------------------------------------
-	// Get user's NID handle
-	// --------------------------------------------------------
-
-	handle, err :=
-		s.repo.GetPrimaryHandleByUserID(
-			authCode.UserID,
-		)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// --------------------------------------------------------
-	// Generate OIDC ID token
-	// --------------------------------------------------------
-
-	idToken, err :=
-		s.GenerateIDToken(
-			authCode.UserID,
-			handle,
-			req.ClientID,
-			authCode.Nonce,
-		)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// --------------------------------------------------------
-	// Token response
-	// --------------------------------------------------------
-
-	return &dto.TokenResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   3600,
-		IDToken:     idToken,
-		Scope:       authCode.Scope,
-	}, nil
+    return &dto.TokenResponse{
+        AccessToken: accessToken, // Sent to frontend so it can use Bearer auth
+        TokenType:   "Bearer",
+        ExpiresIn:   3600,
+        IDToken:     idToken,     // Signed JWT ID token
+        Scope:       authCode.Scope,
+    }, nil
 }
 
 // ============================================================
@@ -1141,36 +1052,36 @@ func (s *OIDCService) JWKS() (
 	}, nil
 }
 
-
 func (s *OIDCService) GetClientInfo(clientID string) (*dto.ClientInfoResponse, error) {
-    clientID = strings.TrimSpace(clientID)
-    if clientID == "" {
-        return nil, errors.New("client_id is required")
-    }
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return nil, errors.New("client_id is required")
+	}
 
-    client, err := s.repo.GetClientInfo(clientID)
-    if err != nil {
-        return nil, errors.New("client not found")
-    }
+	client, err := s.repo.GetClientInfo(clientID)
+	if err != nil {
+		return nil, errors.New("client not found")
+	}
 
-    return client, nil
+	return client, nil
 }
+
 // ============================================================
 // Delete Client By Internal ID
 // ============================================================
 
 func (s *OIDCService) DeleteClient(id string) error {
-    id = strings.TrimSpace(id)
-    if id == "" {
-        return errors.New("client id is required")
-    }
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("client id is required")
+	}
 
-    err := s.repo.DeleteByID(id)
-    if err != nil {
-        return err
-    }
+	err := s.repo.DeleteByID(id)
+	if err != nil {
+		return err
+	}
 
-    return nil
+	return nil
 }
 
 // ============================================================
@@ -1178,39 +1089,39 @@ func (s *OIDCService) DeleteClient(id string) error {
 // ============================================================
 
 func (s *OIDCService) RotateClientSecret(
-    id string,
+	id string,
 ) (*dto.RotateSecretResponse, error) { // Or return string depending on your DTO setup
 
-    id = strings.TrimSpace(id)
-    if id == "" {
-        return nil, errors.New("client id is required")
-    }
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errors.New("client id is required")
+	}
 
-    // 1. Generate a brand new raw secret
-    newClientSecret, err := generateRandomString(48)
-    if err != nil {
-        return nil, err
-    }
+	// 1. Generate a brand new raw secret
+	newClientSecret, err := generateRandomString(48)
+	if err != nil {
+		return nil, err
+	}
 
-    // 2. Hash it using bcrypt
-    hash, err := bcrypt.GenerateFromPassword(
-        []byte(newClientSecret),
-        bcrypt.DefaultCost,
-    )
-    if err != nil {
-        return nil, err
-    }
+	// 2. Hash it using bcrypt
+	hash, err := bcrypt.GenerateFromPassword(
+		[]byte(newClientSecret),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		return nil, err
+	}
 
-    newSecretHash := string(hash)
+	newSecretHash := string(hash)
 
-    // 3. Update the database using the internal ID
-    err = s.repo.RotateSecretByID(id, newSecretHash)
-    if err != nil {
-        return nil, err
-    }
+	// 3. Update the database using the internal ID
+	err = s.repo.RotateSecretByID(id, newSecretHash)
+	if err != nil {
+		return nil, err
+	}
 
-    // 4. Return the plaintext new secret (this is the only time it's shown)
-    return &dto.RotateSecretResponse{
-        ClientSecret: newClientSecret,
-    }, nil
+	// 4. Return the plaintext new secret (this is the only time it's shown)
+	return &dto.RotateSecretResponse{
+		ClientSecret: newClientSecret,
+	}, nil
 }
