@@ -3,39 +3,35 @@
 package helpers
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"log"
 	"os"
-	"strings"
 )
 
 func LoadOIDCPrivateKey() (*rsa.PrivateKey, error) {
 
-	privateKeyPEM := strings.TrimSpace(
-		os.Getenv("NID_OIDC_PRIVATE_KEY"),
-	)
-
 	// ============================================================
-	// Development fallback
+	// Load private key file path from environment
 	// ============================================================
 
-	if privateKeyPEM == "" {
+	keyPath := os.Getenv("NID_OIDC_PRIVATE_KEY_FILE")
 
-		log.Println(
-			"WARNING: NID_OIDC_PRIVATE_KEY is not configured",
+	if keyPath == "" {
+		return nil, errors.New(
+			"NID_OIDC_PRIVATE_KEY_FILE is not configured",
 		)
+	}
 
-		log.Println(
-			"Generating temporary RSA key for development",
-		)
+	// ============================================================
+	// Read PEM file
+	// ============================================================
 
-		return rsa.GenerateKey(
-			rand.Reader,
-			2048,
+	privateKeyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, errors.New(
+			"failed to read OIDC private key: " + err.Error(),
 		)
 	}
 
@@ -43,52 +39,62 @@ func LoadOIDCPrivateKey() (*rsa.PrivateKey, error) {
 	// Decode PEM
 	// ============================================================
 
-	block, _ := pem.Decode(
-		[]byte(privateKeyPEM),
-	)
+	block, _ := pem.Decode(privateKeyPEM)
 
 	if block == nil {
 		return nil, errors.New(
-			"invalid OIDC RSA private key PEM",
+			"invalid OIDC private key PEM",
 		)
 	}
 
 	// ============================================================
-	// PKCS#1
+	// PKCS#8
+	//
+	// -----BEGIN PRIVATE KEY-----
 	// ============================================================
 
-	if key, err := x509.ParsePKCS1PrivateKey(
-		block.Bytes,
-	); err == nil {
+	if block.Type == "PRIVATE KEY" {
+
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, errors.New(
+				"invalid PKCS#8 OIDC private key",
+			)
+		}
+
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, errors.New(
+				"OIDC private key is not RSA",
+			)
+		}
+
+		return rsaKey, nil
+	}
+
+	// ============================================================
+	// PKCS#1
+	//
+	// -----BEGIN RSA PRIVATE KEY-----
+	// ============================================================
+
+	if block.Type == "RSA PRIVATE KEY" {
+
+		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, errors.New(
+				"invalid PKCS#1 OIDC private key",
+			)
+		}
 
 		return key, nil
 	}
 
 	// ============================================================
-	// PKCS#8
+	// Unsupported PEM type
 	// ============================================================
 
-	key, err := x509.ParsePKCS8PrivateKey(
-		block.Bytes,
+	return nil, errors.New(
+		"unsupported OIDC private key type: " + block.Type,
 	)
-
-	if err != nil {
-		return nil, errors.New(
-			"invalid PKCS#8 OIDC private key",
-		)
-	}
-
-	// ============================================================
-	// Ensure RSA
-	// ============================================================
-
-	rsaKey, ok := key.(*rsa.PrivateKey)
-
-	if !ok {
-		return nil, errors.New(
-			"OIDC private key is not RSA",
-		)
-	}
-
-	return rsaKey, nil
 }

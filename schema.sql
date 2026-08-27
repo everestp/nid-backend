@@ -477,7 +477,9 @@ CREATE INDEX idx_wallet_list_user_id
 
 CREATE INDEX idx_wallet_list_lookup
     ON wallet_list(user_id, chain, network, address);
-
+ALTER TABLE oauth_sessions
+ADD CONSTRAINT oauth_sessions_user_client_unique
+UNIQUE (user_id, client_id);
 -- ============================================================================
 -- END
 -- ============================================================================

@@ -13,13 +13,15 @@
 
 NID is a wallet-backed digital identity platform that combines handle claiming, public profile resolution, wallet authentication, and OAuth/OIDC capabilities in a single repo. The project includes a Go backend and a React + TypeScript frontend, with PostgreSQL as the persistence layer and wallet-driven login flows using EVM and Solana signatures.
 
-This repository is structured as a full-stack identity product with:
+This repository is structured as an identity platform with a first-party application, a distributable React SDK build, and an SDK integration demo:
 
 - a public handle layer for `.nid` identity claims and resolution
 - wallet-based authentication for users and OAuth consent flows
 - protected dashboard functionality for handles, wallets, sessions, and profile data
 - OAuth 2.0 / OpenID Connect support for third-party applications
 - a modern frontend experience for user onboarding and app consent flows
+- a React SDK exposing `NIDProvider`, `NIDCallback`, `useNID`, `NIDLoginButton`, and `fetchUserInfo`
+- a standalone Vite demo showing "Sign in with NID" integration
 
 > Repository status: the codebase contains both the backend and frontend, but it is still a working prototype / active development project. Configuration details, database setup, and deployment requirements are defined in the source itself and should be reviewed before production use.
 
@@ -168,6 +170,8 @@ App
 | Security      | `golang-jwt/jwt/v5`, `golang.org/x/crypto`, HMAC, RSA private keys |
 | OAuth / OIDC  | custom OAuth 2.0 / OIDC implementation in Go                       |
 | Frontend      | React 18, TypeScript, Vite                                         |
+| SDK           | Generated React SDK bundle with TypeScript declarations            |
+| SDK demo      | React 19, TypeScript 6, Vite 8, `@everestp/react`                  |
 | Styling       | Tailwind CSS                                                       |
 | UI motion     | `framer-motion`                                                    |
 | Icons         | `lucide-react`, `react-icons`                                      |
@@ -244,8 +248,43 @@ App
 │       ├── data/
 │       ├── pages/
 │       └── types/
+├── nid_sdk/
+│   ├── README.md
+│   ├── dist/                  Built SDK bundles and declarations
+│   ├── eslint.config.js
+│   └── node_modules/          Installed package contents
+├── sdk_demo_implement/
+│   ├── package.json
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   └── pages/
+│   │       ├── Login.tsx
+│   │       ├── Dashboard.tsx
+│   │       └── Demo.tsx
+│   ├── public/
+│   ├── vercel.json
+│   └── vite.config.ts
 └── README.md
 ```
+
+### SDK package
+
+`nid_sdk/` currently contains generated SDK artifacts under `dist/`, including JavaScript bundles and TypeScript declarations. Its public export surface is:
+
+| Export           | Purpose                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| `NIDProvider`    | React context provider for session restoration and auth state |
+| `NIDCallback`    | OAuth callback handling component                             |
+| `useNID`         | Hook for authentication state, user data, login, and logout   |
+| `NIDLoginButton` | Configurable sign-in button component                         |
+| `fetchUserInfo`  | Fetches user information with the stored access token         |
+
+The generated SDK defaults to `https://api.nid.xyz`, uses OAuth authorization-code + S256 PKCE, stores the access token in `localStorage`, and stores OAuth state, verifier, and nonce in `sessionStorage`. The folder does not currently include the SDK source tree or a package manifest needed to rebuild it.
+
+### SDK demo application
+
+`sdk_demo_implement/` is a separate Vite + React + TypeScript application consuming `@everestp/react` version `0.0.11`. It demonstrates a customized `NIDLoginButton`, session restoration with `useNID`, protected dashboard routing, identity claims, and logout. Its `vercel.json` rewrites all client-side routes to `index.html`.
 
 ---
 
@@ -404,6 +443,27 @@ npm run typecheck
 cd nid_frontend
 npm run lint
 ```
+
+## SDK Demo Setup
+
+The SDK demo has its own dependencies and scripts:
+
+```bash
+cd sdk_demo_implement
+npm install
+npm run dev
+```
+
+Available scripts:
+
+| Command           | Purpose                                    |
+| ----------------- | ------------------------------------------ |
+| `npm run dev`     | start the Vite development server          |
+| `npm run build`   | type-check and build the production bundle |
+| `npm run lint`    | run ESLint                                 |
+| `npm run preview` | preview the built bundle                   |
+
+The demo currently has no active `VITE_*` configuration. Its SDK client ID and client secret are hard-coded in `src/App.tsx` and `src/main.tsx`. A confidential OAuth client secret must not be shipped in browser code. Use a public client for browser-only use, or move confidential token exchange to a server-side application before production deployment.
 
 ---
 
@@ -630,6 +690,14 @@ The frontend is routed with `react-router-dom` in `nid_frontend/src/App.tsx`.
 | `/dashboard/settings`         | settings                    |
 | `/:handle`                    | public user profile page    |
 
+The SDK demo has its own routes:
+
+| Route        | Purpose                                   |
+| ------------ | ----------------------------------------- |
+| `/`          | demo login screen                         |
+| `/login`     | demo login screen                         |
+| `/dashboard` | authenticated identity display and logout |
+
 ---
 
 ## Usage Examples
@@ -656,6 +724,40 @@ curl http://localhost:8081/api/v1/user/profile \
   -b 'nid_token=<cookie-value>'
 ```
 
+### Integrate the React SDK
+
+The demo consumes the generated SDK package like this:
+
+```tsx
+import { NIDLoginButton, NIDProvider, useNID } from "@everestp/react";
+
+function Login() {
+  const { isAuthenticated, isLoading, user, logout } = useNID();
+
+  if (isLoading) return <p>Loading NID session...</p>;
+  if (isAuthenticated) {
+    return (
+      <>
+        <p>{user?.preferred_username}.nid</p>
+        <button onClick={logout}>Log out</button>
+      </>
+    );
+  }
+
+  return <NIDLoginButton>Sign in with NID</NIDLoginButton>;
+}
+
+export function App() {
+  return (
+    <NIDProvider clientId="your-client-id" clientSecret="your-client-secret">
+      <Login />
+    </NIDProvider>
+  );
+}
+```
+
+The SDK computes `/auth/nid/callback` as its redirect path and internally handles the OAuth callback. Register the exact redirect URI and client credentials with NID before using the integration.
+
 ---
 
 ## Screenshots
@@ -678,14 +780,17 @@ curl http://localhost:8081/api/v1/user/profile \
 
 ## Deployment Notes
 
-There are no deployment manifests, Dockerfiles, CI configs, or Kubernetes files in this repository as provided. The code is designed to run as a standard Go API plus a static Vite frontend.
+There are no Dockerfiles, CI configs, or Kubernetes files in this repository. The backend runs as a standard Go HTTP service. The main frontend and SDK demo are Vite applications that can be deployed as static assets. The SDK demo includes `vercel.json` with a catch-all rewrite to `index.html` for SPA routing.
 
 ### Recommended deployment pattern
 
 - deploy backend as a Go service with environment variables loaded from a secret manager
 - deploy frontend as a static web app or reverse-proxy behind a CDN
+- deploy `sdk_demo_implement/` as a separate static Vite application when demonstrating the SDK
 - use TLS and a trusted domain for the OIDC issuer and OAuth redirect URIs
 - secure the database connection string and private OIDC key with real secret storage
+- use a public OAuth client for browser-only SDK integrations, or move confidential token exchange to a server
+- ensure the SDK callback path is included in the deployed application’s routing configuration
 
 ### Important implementation caveat
 
@@ -707,12 +812,17 @@ The repository already contains several important security notes in code comment
 Additional production hardening recommendations:
 
 - rotate the existing backend `.env` secrets before public deployment
+- rotate and remove the SDK demo’s hard-coded client credentials before sharing or deploying it
 - enable HTTPS everywhere
 - validate redirect URIs strictly
 - add token expiry and revocation auditing
 - review session replay protections and refresh flow
 - ensure database access is restricted and encrypted in transit
 - configure production secrets via environment injection or a vault service
+
+### SDK-specific security notes
+
+The generated SDK stores access tokens in `localStorage`, which exposes them to JavaScript running on the same origin. Review this choice against the consuming application’s threat model. The generated bundle also emits debug logs around OAuth URLs and authentication state; remove or disable those logs before production distribution if they disclose sensitive flow details.
 
 ---
 

@@ -118,7 +118,7 @@ func main() {
 
 	oidcIssuer := config.GetEnv(
 		"NID_OIDC_ISSUER",
-		"http://localhost:8081",
+		"https://api.nid.xyz",
 	)
 
 	oidcKeyID := config.GetEnv(

@@ -1,0 +1,90 @@
+
+sudo docker rm -f nid-backend 2>/dev/null || true
+sudo docker build --no-cache -t nid-backend .
+sudo docker run -d \
+  --name nid-backend \
+  --env-file /home/ubuntu/nid-backend/.env \
+  -p 8081:8081 \
+  --restart unless-stopped \
+  nid-backend
+
+
+sudo docker run -d \
+  --name nid-backend \
+  --env-file /home/ubuntu/nid-backend/.env \
+  -v /home/ubuntu/nid-backend/oidc-private-key.pem:/app/oidc-private-key.pem:ro \
+  -p 8081:8081 \
+  --restart unless-stopped \
+  nid-backend
+Bro, the error simply means:
+
+> **Your app received the OIDC private key, but Go could not understand it as a valid PEM RSA private key.**
+
+The original error was:
+
+```text
+failed to load OIDC private key: invalid OIDC private key PEM
+```
+
+### Why it happened
+
+You put the private key inside `.env` like:
+
+```env
+NID_OIDC_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----"
+```
+
+Docker passes that as an environment variable. PEM expects actual line breaks:
+
+```text
+-----BEGIN PRIVATE KEY-----
+MIIE...
+...
+-----END PRIVATE KEY-----
+```
+
+Your code tried to convert `\n` to newlines, but the environment/quoting was causing the PEM parser to still fail.
+
+### The fix we made
+
+Instead of putting the private key directly in `.env`, we now store it as a file:
+
+```text
+oidc-private-key.pem
+```
+
+and `.env` only contains:
+
+```env
+NID_OIDC_PRIVATE_KEY_FILE=/app/oidc-private-key.pem
+```
+
+Docker mounts it:
+
+```bash
+-v /home/ubuntu/nid-backend/oidc-private-key.pem:/app/oidc-private-key.pem:ro
+```
+
+Then Go reads the actual PEM file.
+
+### So the simple explanation
+
+**Before:**
+
+```text
+.env → escaped private key → Docker → Go → ❌ PEM error
+```
+
+**Now:**
+
+```text
+oidc-private-key.pem → Docker volume → Go → PEM parser → ✅
+```
+
+And your database was **never the problem** — your logs showed:
+
+```text
+Database connected successfully
+```
+
+The problem was specifically the **OIDC private-key formatting/loading**.

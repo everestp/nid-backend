@@ -24,18 +24,22 @@ func NewSessionRepository(db *sql.DB) *SessionRepository {
 }
 
 // ============================================================
-// CREATE SESSION
+// CREATE / RESTORE SESSION
 // ============================================================
 //
-// Creates a login session for a user + OAuth client.
+// One session per:
 //
-// Example:
-// user A logs into example.com through NID
+//	user_id + client_id
 //
-// oauth_sessions:
-// user_id   = user A
-// client_id = example.com
-// status    = active
+// If the same user logs into the same client again,
+// the existing session is reused and activated.
+//
+// Examples:
+//
+//	user1 + client1 -> INSERT
+//	user1 + client2 -> INSERT
+//	user1 + client2 -> UPDATE existing
+//	user2 + client1 -> INSERT
 //
 // ============================================================
 
@@ -43,7 +47,6 @@ func (r *SessionRepository) CreateSession(
 	userID string,
 	clientID string,
 ) (string, error) {
-
 	var sessionID string
 
 	err := r.db.QueryRow(
@@ -51,9 +54,17 @@ func (r *SessionRepository) CreateSession(
 		INSERT INTO oauth_sessions (
 			user_id,
 			client_id,
-			status
+			status,
+			last_used_at
 		)
-		VALUES ($1, $2, 'active')
+		VALUES ($1, $2, 'active', CURRENT_TIMESTAMP)
+
+		ON CONFLICT ON CONSTRAINT oauth_sessions_user_client_unique
+		DO UPDATE SET
+			status = 'active',
+			last_used_at = CURRENT_TIMESTAMP,
+			revoked_at = NULL
+
 		RETURNING id
 		`,
 		userID,
@@ -70,15 +81,10 @@ func (r *SessionRepository) CreateSession(
 // ============================================================
 // GET USER SESSIONS
 // ============================================================
-//
-// Returns all sessions belonging to the authenticated user.
-//
-// ============================================================
 
 func (r *SessionRepository) GetUserSessions(
 	userID string,
 ) ([]dto.Session, error) {
-
 	rows, err := r.db.Query(
 		`
 		SELECT
@@ -95,28 +101,23 @@ func (r *SessionRepository) GetUserSessions(
 		`,
 		userID,
 	)
-
 	if err != nil {
 		return nil, err
 	}
-
 	defer rows.Close()
 
 	sessions := make([]dto.Session, 0)
 
 	for rows.Next() {
-
 		var session dto.Session
 
-		err := rows.Scan(
+		if err := rows.Scan(
 			&session.ID,
 			&session.ClientID,
 			&session.AppName,
 			&session.Status,
 			&session.CreatedAt,
-		)
-
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
@@ -134,11 +135,7 @@ func (r *SessionRepository) GetUserSessions(
 // GET SINGLE SESSION
 // ============================================================
 //
-// Important:
-//
 // sessionID + userID are both checked.
-//
-// A user cannot access another user's session.
 //
 // ============================================================
 
@@ -146,7 +143,6 @@ func (r *SessionRepository) GetSession(
 	sessionID string,
 	userID string,
 ) (*dto.Session, error) {
-
 	var session dto.Session
 
 	err := r.db.QueryRow(
@@ -174,7 +170,6 @@ func (r *SessionRepository) GetSession(
 	)
 
 	if err != nil {
-
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("session not found")
 		}
@@ -189,12 +184,7 @@ func (r *SessionRepository) GetSession(
 // REVOKE SESSION
 // ============================================================
 //
-// Revokes only one session.
-//
-// IMPORTANT:
-//
-// user_id is included in WHERE clause so a user cannot revoke
-// somebody else's session.
+// Revokes only one active session belonging to the user.
 //
 // ============================================================
 
@@ -202,7 +192,6 @@ func (r *SessionRepository) RevokeSession(
 	sessionID string,
 	userID string,
 ) error {
-
 	result, err := r.db.Exec(
 		`
 		UPDATE oauth_sessions
@@ -214,13 +203,11 @@ func (r *SessionRepository) RevokeSession(
 		sessionID,
 		userID,
 	)
-
 	if err != nil {
 		return err
 	}
 
 	rows, err := result.RowsAffected()
-
 	if err != nil {
 		return err
 	}
@@ -237,15 +224,10 @@ func (r *SessionRepository) RevokeSession(
 // ============================================================
 // REVOKE ALL SESSIONS
 // ============================================================
-//
-// Revokes every active session belonging to a user.
-//
-// ============================================================
 
 func (r *SessionRepository) RevokeAllSessions(
 	userID string,
 ) error {
-
 	_, err := r.db.Exec(
 		`
 		UPDATE oauth_sessions
@@ -260,40 +242,10 @@ func (r *SessionRepository) RevokeAllSessions(
 }
 
 // ============================================================
-// EXPIRE OLD SESSIONS
-// ============================================================
-//
-// Sessions older than 30 days become expired.
-//
-// This can be called from a background cleanup job.
-//
-// ============================================================
-
-func (r *SessionRepository) ExpireSessions() error {
-
-	_, err := r.db.Exec(
-		`
-		UPDATE oauth_sessions
-		SET status = 'expired'
-		WHERE status = 'active'
-		  AND created_at < NOW() - INTERVAL '30 days'
-		`,
-	)
-
-	return err
-}
-
-// ============================================================
 // REVOKE SESSION + ITS ACCESS TOKENS
 // ============================================================
 //
-// When user revokes:
-//
-//     Session
-//
-// we also revoke every access token belonging to that session.
-//
-// Both operations happen inside one transaction.
+// Both operations happen in one transaction.
 //
 // ============================================================
 
@@ -301,9 +253,7 @@ func (r *SessionRepository) RevokeSessionWithTokens(
 	sessionID string,
 	userID string,
 ) error {
-
 	tx, err := r.db.Begin()
-
 	if err != nil {
 		return err
 	}
@@ -325,13 +275,11 @@ func (r *SessionRepository) RevokeSessionWithTokens(
 		sessionID,
 		userID,
 	)
-
 	if err != nil {
 		return err
 	}
 
 	rows, err := result.RowsAffected()
-
 	if err != nil {
 		return err
 	}
@@ -343,7 +291,7 @@ func (r *SessionRepository) RevokeSessionWithTokens(
 	}
 
 	// --------------------------------------------------------
-	// Revoke access tokens belonging to this session
+	// Revoke access tokens belonging to session
 	// --------------------------------------------------------
 
 	_, err = tx.Exec(
@@ -355,7 +303,6 @@ func (r *SessionRepository) RevokeSessionWithTokens(
 		`,
 		sessionID,
 	)
-
 	if err != nil {
 		return err
 	}
@@ -377,19 +324,12 @@ func (r *SessionRepository) RevokeSessionWithTokens(
 //
 // "Log out everywhere"
 //
-// This revokes:
-//
-//     1. All NID sessions
-//     2. All OAuth access tokens
-//
 // ============================================================
 
 func (r *SessionRepository) RevokeAllSessionsWithTokens(
 	userID string,
 ) error {
-
 	tx, err := r.db.Begin()
-
 	if err != nil {
 		return err
 	}
@@ -397,7 +337,7 @@ func (r *SessionRepository) RevokeAllSessionsWithTokens(
 	defer tx.Rollback()
 
 	// --------------------------------------------------------
-	// Revoke all sessions
+	// Revoke all user sessions
 	// --------------------------------------------------------
 
 	_, err = tx.Exec(
@@ -409,13 +349,12 @@ func (r *SessionRepository) RevokeAllSessionsWithTokens(
 		`,
 		userID,
 	)
-
 	if err != nil {
 		return err
 	}
 
 	// --------------------------------------------------------
-	// Revoke all access tokens
+	// Revoke all user access tokens
 	// --------------------------------------------------------
 
 	_, err = tx.Exec(
@@ -427,7 +366,6 @@ func (r *SessionRepository) RevokeAllSessionsWithTokens(
 		`,
 		userID,
 	)
-
 	if err != nil {
 		return err
 	}
@@ -447,12 +385,11 @@ func (r *SessionRepository) RevokeAllSessionsWithTokens(
 // CLEANUP EXPIRED SESSIONS
 // ============================================================
 //
-// Marks old active sessions as expired.
+// Active sessions older than 30 days become expired.
 //
 // ============================================================
 
 func (r *SessionRepository) CleanupExpiredSessions() error {
-
 	_, err := r.db.Exec(
 		`
 		UPDATE oauth_sessions
@@ -469,12 +406,11 @@ func (r *SessionRepository) CleanupExpiredSessions() error {
 // CLEANUP EXPIRED TOKENS
 // ============================================================
 //
-// Access tokens are revoked after expiration.
+// Tokens are marked revoked once their expiration time passes.
 //
 // ============================================================
 
 func (r *SessionRepository) CleanupExpiredTokens() error {
-
 	_, err := r.db.Exec(
 		`
 		UPDATE oauth_access_tokens

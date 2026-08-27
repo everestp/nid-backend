@@ -22,7 +22,7 @@ func LoadConfig() *Config {
 	}
 	FrontendURL := os.Getenv("FRONTEND_URL")
 	if FrontendURL == "" {
-		FrontendURL = "http://localhost:5173"
+		FrontendURL = "https://nid.xyz"
 	}
 	return &Config{
 		DatabaseURL: dbURL,
